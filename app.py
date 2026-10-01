@@ -25,7 +25,7 @@ if "watchlist" not in st.session_state:
         "QCOM", "AVGO", "ASML", "ARM"
     ]
 
-# --- SEKCE 1: RYCHLÝ PŘEHLED SEKTORU (HTML/CSS FLEXBOX MŘÍŽKA) ---
+# --- SEKCE 1: RYCHLÝ PŘEHLED SEKTORU (CSS GRID - GARANTOVANÉ SLOUPCE) ---
 st.subheader("⚡ Watchlist & Rychlý přehled sektoru")
 
 # Formulář pro přidání nové firmy
@@ -41,37 +41,33 @@ with st.expander("➕ Přidat novou firmu do mřížky"):
             else:
                 st.warning(f"Ticker {new_ticker} už v seznamu je.")
 
-# Vykreslení mřížky pomocí HTML/CSS
 watchlist = st.session_state["watchlist"]
 
-# CSS pro flexbox kontejner a jednotlivé karty (garantuje 4 sloupce)
+# CSS pro mřížku (4 sloupce na desktopu, 2 na mobilu)
 grid_style = """
 <style>
-.flex-grid-container {
-    display: flex;
-    flex-wrap: wrap;
+.custom-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 10px;
-    justify-content: flex-start;
     margin-bottom: 20px;
 }
-.flex-grid-card {
-    flex: 0 0 calc(25% - 8px); /* Přesně čtvrtina šířky mínus mezera -> 4 sloupce */
+@media (max-width: 768px) {
+    .custom-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+.grid-card {
     border-radius: 8px;
     padding: 10px;
     text-align: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    box-sizing: border-box;
-}
-@media (max-width: 992px) {
-    .flex-grid-card { flex: 0 0 calc(33.33% - 8px); }
-}
-@media (max-width: 576px) {
-    .flex-grid-card { flex: 0 0 calc(50% - 8px); }
 }
 </style>
 """
 
-cards_html = "<div class='flex-grid-container'>"
+# Sestavení HTML mřížky do jednoho řetězce
+cards_html = "<div class='custom-grid'>"
 
 for ticker in watchlist:
     try:
@@ -113,7 +109,7 @@ for ticker in watchlist:
         sign = ""
 
     cards_html += f"""
-    <div class='flex-grid-card' style="background-color: {bg_color}; border: 1px solid {border_color};">
+    <div class="grid-card" style="background-color: {bg_color}; border: 1px solid {border_color};">
         <h4 style="margin: 0; color: inherit;">{ticker}</h4>
         <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.8;">{price_str}</p>
         <h3 style="margin: 4px 0 0 0; color: {text_color}; font-size: 18px;">
@@ -124,6 +120,7 @@ for ticker in watchlist:
 
 cards_html += "</div>"
 
+# Vykreslení celé mřížky najednou
 st.markdown(grid_style + cards_html, unsafe_allow_html=True)
 
 # Správa / Odebírání firem ze seznamu
