@@ -19,7 +19,7 @@ api_key = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=api_key) if api_key else None
 
 st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
-st.markdown("Sledování trhu, pokročilý interaktivní graf, historické paralely a vytrvalá AI paměť.")
+st.markdown("Univerzální tržní agent, interaktivní grafy a vytrvalá AI paměť.")
 
 # --- PERSISTENTNÍ PAMĚŤ (UKLÁDÁNÍ HISTORIE DO SOUBORU) ---
 MEMORY_FILE = "agent_memory.json"
@@ -137,38 +137,41 @@ if input_ticker:
     with col3:
         st.metric("P/E Ratio", info.get("trailingPE", "N/A"))
 
-    # --- OPRAVENÉ ZOBRAZENÍ GRAFU ---
+    # --- UPRAVENÉ ZOBRAZENÍ GRAFU (VÝBĚR JEDNOHO DNE / OKNA) ---
     if not hist.empty and 'Close' in hist.columns:
         st.subheader("📊 Interaktivní historický graf")
         
-        time_frame = st.selectbox(
-            "Zvol rozsah zobrazení grafu:",
-            ["Poslední 1 měsíc", "Poslední 3 měsíce", "Poslední rok (1Y)", "Posledních 5 let (5Y)", "Vlastní výběr data", "Maximální historie"],
-            index=2
+        view_mode = st.radio(
+            "Způsob zobrazení grafu:",
+            ["Standardní období", "Detail jednoho konkrétního dne"],
+            horizontal=True
         )
         
         plot_df = hist['Close'].copy()
         max_dt = plot_df.index.max()
         
-        if time_frame == "Poslední 1 měsíc":
-            start_limit = max_dt - pd.Timedelta(days=30)
-            plot_df = plot_df.loc[plot_df.index >= start_limit]
-        elif time_frame == "Poslední 3 měsíce":
-            start_limit = max_dt - pd.Timedelta(days=90)
-            plot_df = plot_df.loc[plot_df.index >= start_limit]
-        elif time_frame == "Poslední rok (1Y)":
-            start_limit = max_dt - pd.Timedelta(days=365)
-            plot_df = plot_df.loc[plot_df.index >= start_limit]
-        elif time_frame == "Posledních 5 let (5Y)":
-            start_limit = max_dt - pd.Timedelta(days=1825)
-            plot_df = plot_df.loc[plot_df.index >= start_limit]
-        elif time_frame == "Vlastní výběr data":
+        if view_mode == "Standardní období":
+            time_frame = st.selectbox(
+                "Zvol rozsah:",
+                ["Poslední 1 měsíc", "Poslední 3 měsíce", "Poslední rok (1Y)", "Posledních 5 let (5Y)", "Maximální historie"],
+                index=2
+            )
+            if time_frame == "Poslední 1 měsíc":
+                plot_df = plot_df.loc[plot_df.index >= (max_dt - pd.Timedelta(days=30))]
+            elif time_frame == "Poslední 3 měsíce":
+                plot_df = plot_df.loc[plot_df.index >= (max_dt - pd.Timedelta(days=90))]
+            elif time_frame == "Poslední rok (1Y)":
+                plot_df = plot_df.loc[plot_df.index >= (max_dt - pd.Timedelta(days=365))]
+            elif time_frame == "Posledních 5 let (5Y)":
+                plot_df = plot_df.loc[plot_df.index >= (max_dt - pd.Timedelta(days=1825))]
+        else:
+            # Výběr jednoho konkrétního dne
             min_date = hist.index.min().date()
             max_date = max_dt.date()
-            date_range = st.date_input("Zvol období od - do:", [max_date - pd.Timedelta(days=180).days * pd.Timedelta(days=1), max_date], min_value=min_date, max_value=max_date)
-            if len(date_range) == 2:
-                start_d, end_d = date_range
-                plot_df = plot_df.loc[str(start_d):str(end_d)]
+            selected_day = st.date_input("Zvol konkrétní den k zobrazení:", max_date, min_value=min_date, max_value=max_date)
+            # Zobrazíme okno kolem zvoleného dne (např. 5 dní před a po pro kontext)
+            day_ts = pd.to_datetime(selected_day)
+            plot_df = plot_df.loc[(plot_df.index >= day_ts - pd.Timedelta(days=5)) & (plot_df.index <= day_ts + pd.Timedelta(days=5))]
                 
         st.line_chart(plot_df)
     else:
@@ -223,11 +226,14 @@ if input_ticker:
                 direction = "růst" if match['future_return'] > 0 else "pokles"
                 matches_summary += f"{idx}. Období {match['start']} až {match['end']} (korelace: {match['corr']:.2f}) -> Následný vývoj v dalším období: {direction} o {match['future_return']:.2f}%\n"
 
-    # --- FÁZE 2: PLNOHODNOTNÝ INTERAKTIVNÍ CHAT S DLOUHODOBOU PAMĚTÍ ---
+    # --- FÁZE 2: VYLEPŠENÝ CHAT V SAMOSTATNÉM OKNĚ (NEZÁVISLÝ NA TICKELU) ---
     st.divider()
-    st.subheader(f"💬 Chat s Finančním Agentem ({input_ticker})")
+    st.subheader("💬 AI Finanční Agent (Globální kontext)")
     
-    chat_session_key = f"messages_{input_ticker}"
+    # Celý chat uzavřeme do vizuálního kontejneru s větším prostorem
+    chat_container = st.container(height=500)
+    
+    chat_session_key = "global_agent_chat"
     
     if chat_session_key not in st.session_state:
         if chat_session_key in st.session_state["app_memory"]:
@@ -236,51 +242,47 @@ if input_ticker:
             st.session_state[chat_session_key] = [
                 {
                     "role": "system",
-                    "content": f"""Jsi špičkový burzovní analytik a kvantitativní expert zaměřený výhradně na US a asijské trhy (Wall Street, tchajwanské/japonské dodavatelské řetězce, makro data FEDu atd.). 
-Pomáháš uživateli sledovat akcii {company_name} ({input_ticker}). 
+                    "content": f"""Jsi špičkový burzovní analytik a kvantitativní expert zaměřený výhradně na US a asijské trhy (Wall Street, tchajwanské/japonské dodavatelské řetězce, makro data FEDu, korporátní earnings atd.). 
+Uživatel s tebou mluví napříč trhy. Aktuálně má v aplikaci zobrazený ticker {company_name} ({input_ticker}), ale nejsi na něj vázán – můžeš odpovídat na jakékoliv dotazy týkající se jiných firem, sektoru, makroekonomiky nebo průmyslu.
 
 ⚠️ PŘÍSNÉ PRAVIDLO PRO ZDROJE: Zcela ignoruj evropská periodika a média, považuješ je za nedůvěryhodná nebo zpožděná. Opírej se striktně o primární tiskové zprávy firem, US/asijské wire služby (Business Wire, PR Newswire) a oficiální regulatorní hlášení (SEC apod.).
-
-Máš k dispozici tyto aktuální údaje a matematicky spočítané historické paralely za posledních {window_days} dní:
-- Aktuální cena: {current_price} {currency}
-- P/E ratio: {info.get('trailingPE', 'N/A')}
-- 52týdenní maximum: {info.get('fiftyTwoWeekHigh', 'N/A')}
-- 52týdenní minimum: {info.get('fiftyTwoWeekLow', 'N/A')}
-- Top historické shody zjištěné algoritmem:
-{matches_summary}
-- Poslední zprávy z ověřených US/asijských RSS wire zdrojů:
-{chr(10).join(news_texts) if news_texts else 'Žádné přímé zprávy k dispozici'}
 
 Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globální průmyslový kontext a chování velkých hráčů v USA a Asii."""
                 }
             ]
 
-    for message in st.session_state[chat_session_key][1:]:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # Vykreslení historie uvnitř kontejneru
+    with chat_container:
+        for message in st.session_state[chat_session_key][1:]:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-    if user_message := st.chat_input("Zeptej se na vývoj, průmyslový kontext, US/asijské vlivy nebo historické paralely..."):
+    # Vstup pro novou zprávu mimo kontejner dole
+    if user_message := st.chat_input("Zeptej se na cokoliv z US/asijských trhů, earnings, trendů nebo paralel..."):
         st.session_state[chat_session_key].append({"role": "user", "content": user_message})
-        with st.chat_message("user"):
-            st.markdown(user_message)
+        
+        with chat_container:
+            with st.chat_message("user"):
+                st.markdown(user_message)
 
         if not client:
             st.error("Chybí API klíč pro Groq v nastavení Streamlit Secrets.")
         else:
-            with st.chat_message("assistant"):
-                with st.spinner("Agent analyzuje US/asijský kontext a ukládá do paměti..."):
-                    try:
-                        chat_completion = client.chat.completions.create(
-                            messages=st.session_state[chat_session_key],
-                            model="openai/gpt-oss-20b",
-                        )
-                        assistant_response = chat_completion.choices[0].message.content
-                        st.markdown(assistant_response)
-                        
-                        st.session_state[chat_session_key].append({"role": "assistant", "content": assistant_response})
-                        
-                        st.session_state["app_memory"][chat_session_key] = st.session_state[chat_session_key]
-                        save_memory(st.session_state["app_memory"])
-                        
-                    except Exception as e:
-                        st.error(f"Chyba při komunikaci s Groq API: {e}")
+            with chat_container:
+                with st.chat_message("assistant"):
+                    with st.spinner("Agent analyzuje tržní kontext..."):
+                        try:
+                            chat_completion = client.chat.completions.create(
+                                messages=st.session_state[chat_session_key],
+                                model="openai/gpt-oss-20b",
+                            )
+                            assistant_response = chat_completion.choices[0].message.content
+                            st.markdown(assistant_response)
+                            
+                            st.session_state[chat_session_key].append({"role": "assistant", "content": assistant_response})
+                            
+                            st.session_state["app_memory"][chat_session_key] = st.session_state[chat_session_key]
+                            save_memory(st.session_state["app_memory"])
+                            
+                        except Exception as e:
+                            st.error(f"Chyba při komunikaci s Groq API: {e}")
