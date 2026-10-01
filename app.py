@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 import os
+import json
 import feedparser
 from groq import Groq
 
@@ -18,12 +19,34 @@ api_key = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=api_key) if api_key else None
 
 st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
-st.markdown("Sledování trhu, matematické historické paralely a AI chat s filtrací na US/Asijské primární zdroje a wire služby.")
+st.markdown("Sledování trhu, pokročilý interaktivní graf, historické paralely a vytrvalá AI paměť.")
+
+# --- PERSISTENTNÍ PAMĚŤ (UKLÁDÁNÍ HISTORIE DO SOUBORU) ---
+MEMORY_FILE = "agent_memory.json"
+
+def load_memory():
+    if os.path.exists(MEMORY_FILE):
+        try:
+            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_memory(memory_data):
+    try:
+        with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(memory_data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+# Inicializace stavu paměti v session
+if "app_memory" not in st.session_state:
+    st.session_state["app_memory"] = load_memory()
 
 # --- BOČNÍ PANEL PRO VÝBĚR AKTIVA ---
 st.sidebar.header("Nastavení sledování")
 input_ticker = st.sidebar.text_input("Zadej Ticker firmy (např. AAPL, TSLA, IBM, QUBT, SMCI):", value="IBM").upper().strip()
-compare_ticker = st.sidebar.text_input("Srovnání (nepovinné, např. MSFT):", value="").upper().strip()
 window_days = st.sidebar.slider("Délka srovnávaného okna (dny)", min_value=15, max_value=60, value=30)
 
 # Funkce pro stažení dat s podporou Google Finance fallbacku
@@ -116,12 +139,38 @@ if input_ticker:
     with col3:
         st.metric("P/E Ratio", info.get("trailingPE", "N/A"))
 
-    # Graf vývoje
+    # --- UPRAVENÉ ZOBRAZENÍ GRAFU (VÝBĚR OBDOBÍ / MĚSÍCE / DNE) ---
     if not hist.empty and 'Close' in hist.columns:
-        st.subheader("📊 Historický vývoj a kontext")
-        st.line_chart(hist['Close'].tail(500))
+        st.subheader("📊 Interaktivní historický graf")
+        
+        # Volba rozsahu zobrazení
+        time_frame = st.selectbox(
+            "Zvol rozsah zobrazení grafu:",
+            ["Poslední 1 měsíc", "Poslední 3 měsíce", "Poslední rok (1Y)", "Posledních 5 let (5Y)", "Vlastní výběr data", "Maximální historie"],
+            index=2
+        )
+        
+        plot_df = hist['Close'].copy()
+        
+        if time_frame == "Poslední 1 měsíc":
+            plot_df = plot_df.last("30D")
+        elif time_frame == "Poslední 3 měsíce":
+            plot_df = plot_df.last("90D")
+        elif time_frame == "Poslední rok (1Y)":
+            plot_df = plot_df.last("365D")
+        elif time_frame == "Posledních 5 let (5Y)":
+            plot_df = plot_df.last("1825D")
+        elif time_frame == "Vlastní výběr data":
+            min_date = hist.index.min().date()
+            max_date = hist.index.max().date()
+            date_range = st.date_input("Zvol období od - do:", [max_date - pd.Timedelta(days=180), max_date], min_value=min_date, max_value=max_date)
+            if len(date_range) == 2:
+                start_d, end_d = date_range
+                plot_df = plot_df.loc[str(start_d):str(end_d)]
+                
+        st.line_chart(plot_df)
     else:
-        st.warning("Pro tento ticker nejsou k dispozici detailní historická data v rozvržení časové řady.")
+        st.warning("Pro tento ticker nejsou k dispozici detailní historická data.")
 
     # --- FÁZE 1: MATEMATICKÉ VYHLEDÁNÍ SHODY V PYTHONU ---
     def find_historical_matches(df, win_size):
@@ -172,16 +221,21 @@ if input_ticker:
                 direction = "růst" if match['future_return'] > 0 else "pokles"
                 matches_summary += f"{idx}. Období {match['start']} až {match['end']} (korelace: {match['corr']:.2f}) -> Následný vývoj v dalším období: {direction} o {match['future_return']:.2f}%\n"
 
-    # --- FÁZE 2: PLNOHODNOTNÝ INTERAKTIVNÍ CHAT S AGENTEM ---
+    # --- FÁZE 2: PLNOHODNOTNÝ INTERAKTIVNÍ CHAT S DLOUHODOBOU PAMĚTÍ ---
     st.divider()
     st.subheader(f"💬 Chat s Finančním Agentem ({input_ticker})")
     
     chat_session_key = f"messages_{input_ticker}"
+    
+    # Načtení z permanentní paměti pokud existuje, jinak inicializace
     if chat_session_key not in st.session_state:
-        st.session_state[chat_session_key] = [
-            {
-                "role": "system",
-                "content": f"""Jsi špičkový burzovní analytik a kvantitativní expert zaměřený výhradně na US a asijské trhy (Wall Street, tchajwanské/japonské dodavatelské řetězce, makro data FEDu atd.). 
+        if chat_session_key in st.session_state["app_memory"]:
+            st.session_state[chat_session_key] = st.session_state["app_memory"][chat_session_key]
+        else:
+            st.session_state[chat_session_key] = [
+                {
+                    "role": "system",
+                    "content": f"""Jsi špičkový burzovní analytik a kvantitativní expert zaměřený výhradně na US a asijské trhy (Wall Street, tchajwanské/japonské dodavatelské řetězce, makro data FEDu atd.). 
 Pomáháš uživateli sledovat akcii {company_name} ({input_ticker}). 
 
 ⚠️ PŘÍSNÉ PRAVIDLO PRO ZDROJE: Zcela ignoruj evropská periodika a média, považuješ je za nedůvěryhodná nebo zpožděná. Opírej se striktně o primární tiskové zprávy firem, US/asijské wire služby (Business Wire, PR Newswire) a oficiální regulatorní hlášení (SEC apod.).
@@ -197,9 +251,10 @@ Máš k dispozici tyto aktuální údaje a matematicky spočítané historické 
 {chr(10).join(news_texts) if news_texts else 'Žádné přímé zprávy k dispozici'}
 
 Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globální průmyslový kontext a chování velkých hráčů v USA a Asii."""
-            }
-        ]
+                }
+            ]
 
+    # Zobrazení chatu
     for message in st.session_state[chat_session_key][1:]:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -213,14 +268,21 @@ Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globál
             st.error("Chybí API klíč pro Groq v nastavení Streamlit Secrets.")
         else:
             with st.chat_message("assistant"):
-                with st.spinner("Agent analyzuje US/asijský kontext z primárních zdrojů..."):
+                with st.spinner("Agent analyzuje US/asijský kontext a ukládá do paměti..."):
                     try:
                         chat_completion = client.chat.completions.create(
                             messages=st.session_state[chat_session_key],
-                            model="openai/gpt-oss-20b", # Stabilní produkční model
+                            model="openai/gpt-oss-20b",
                         )
                         assistant_response = chat_completion.choices[0].message.content
                         st.markdown(assistant_response)
+                        
+                        # Přidání odpovědi do historie
                         st.session_state[chat_session_key].append({"role": "assistant", "content": assistant_response})
+                        
+                        # Uložení stavu do permanentní paměti
+                        st.session_state["app_memory"][chat_session_key] = st.session_state[chat_session_key]
+                        save_memory(st.session_state["app_memory"])
+                        
                     except Exception as e:
                         st.error(f"Chyba při komunikaci s Groq API: {e}")
