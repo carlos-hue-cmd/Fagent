@@ -217,7 +217,7 @@ Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globál
                     try:
                         chat_completion = client.chat.completions.create(
                             messages=st.session_state[chat_session_key],
-                            model="llama-3.3-70b-versatile",
+                            model="llama-3.1-8b-instant",
                         )
                         assistant_response = chat_completion.choices[0].message.content
                         st.markdown(assistant_response)
