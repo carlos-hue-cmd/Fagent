@@ -25,7 +25,7 @@ if "watchlist" not in st.session_state:
         "QCOM", "AVGO", "ASML", "ARM"
     ]
 
-# --- SEKCE 1: RYCHLÝ PŘEHLED SEKTORU (HTML/CSS FLEXBOX MŘÍŽKA - GARANTOVANÉ 4 SLOUPCE) ---
+# --- SEKCE 1: RYCHLÝ PŘEHLED SEKTORU (HTML/CSS FLEXBOX MŘÍŽKA) ---
 st.subheader("⚡ Watchlist & Rychlý přehled sektoru")
 
 # Formulář pro přidání nové firmy
@@ -44,8 +44,7 @@ with st.expander("➕ Přidat novou firmu do mřížky"):
 # Vykreslení mřížky pomocí HTML/CSS
 watchlist = st.session_state["watchlist"]
 
-# CSS pro flexbox kontejner a jednotlivé karty
-# flex-basis: 22% znamená, že každá karta zabere přibližně 22% šířky kontejneru (+ mezery), takže se vejdou 4 na řádek.
+# CSS pro flexbox kontejner a jednotlivé karty (garantuje 4 sloupce)
 grid_style = """
 <style>
 .flex-grid-container {
@@ -55,32 +54,25 @@ grid_style = """
     justify-content: flex-start;
     margin-bottom: 20px;
 }
-
 .flex-grid-card {
-    flex: 0 0 calc(25% - 8px); /* Přesně čtvrtina šířky mínus mezera */
+    flex: 0 0 calc(25% - 8px); /* Přesně čtvrtina šířky mínus mezera -> 4 sloupce */
     border-radius: 8px;
     padding: 10px;
     text-align: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     box-sizing: border-box;
 }
-
-/* Responzivita: Na tabletech 3 na řádek */
 @media (max-width: 992px) {
     .flex-grid-card { flex: 0 0 calc(33.33% - 8px); }
 }
-
-/* Responzivita: Na mobilech 2 na řádek */
 @media (max-width: 576px) {
     .flex-grid-card { flex: 0 0 calc(50% - 8px); }
 }
 </style>
 """
 
-# Začátek HTML gridu
 cards_html = "<div class='flex-grid-container'>"
 
-# Generování obsahu karet
 for ticker in watchlist:
     try:
         t_data = yf.Ticker(ticker)
@@ -109,7 +101,6 @@ for ticker in watchlist:
     else:
         price_str = "N/A"
 
-    # Barvy podle plusu / mínusu
     if change_pct >= 0:
         bg_color = "rgba(46, 160, 67, 0.12)"
         border_color = "#2ea043"
@@ -121,7 +112,6 @@ for ticker in watchlist:
         text_color = "#f85149"
         sign = ""
 
-    # Jedna karta v HTML
     cards_html += f"""
     <div class='flex-grid-card' style="background-color: {bg_color}; border: 1px solid {border_color};">
         <h4 style="margin: 0; color: inherit;">{ticker}</h4>
@@ -129,15 +119,25 @@ for ticker in watchlist:
         <h3 style="margin: 4px 0 0 0; color: {text_color}; font-size: 18px;">
             {sign}{change_pct:.2f}%
         </h3>
-        
-        {st.button("❌", key=f"del_{ticker}", help=f"Smazat {ticker}", type="primary")}
     </div>
     """
 
 cards_html += "</div>"
 
-# Vykreslení stylů a gridu
 st.markdown(grid_style + cards_html, unsafe_allow_html=True)
+
+# Správa / Odebírání firem ze seznamu
+with st.expander("🗑️ Správa / Odebírání firem ze seznamu"):
+    del_col1, del_col2 = st.columns([2, 1])
+    with del_col1:
+        ticker_to_delete = st.selectbox("Vyber firmu k odstranění:", watchlist, key="del_select")
+    with del_col2:
+        st.write("") 
+        if st.button("Smazat vybranou firmu", type="primary"):
+            if ticker_to_delete in st.session_state["watchlist"]:
+                st.session_state["watchlist"].remove(ticker_to_delete)
+                st.success(f"Firma {ticker_to_delete} byla odstraněna.")
+                st.rerun()
 
 st.divider()
 
