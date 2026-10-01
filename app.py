@@ -9,7 +9,6 @@ st.subheader("⚡ Watchlist & Rychlý přehled sektoru (4 sloupce)")
 
 # --- SPRÁVA WATCHLISTU V SESSION STATE ---
 if "watchlist" not in st.session_state:
-    # Výchozí seznam 4x5 = 20 firem (nebo libovolný základ)
     st.session_state["watchlist"] = [
         "IBM", "TSMC", "AAPL", "MSFT", 
         "NVDA", "QUBT", "SMCI", "AMD", 
@@ -34,14 +33,12 @@ with st.expander("➕ Přidat novou firmu do mřížky"):
 num_cols = 4
 watchlist = st.session_state["watchlist"]
 
-# Rozdělení na řádky po 4
 for i in range(0, len(watchlist), num_cols):
     row_tickers = watchlist[i:i + num_cols]
     cols = st.columns(num_cols)
     
     for j, ticker in enumerate(row_tickers):
         with cols[j]:
-            # Rychlé stažení dat pro aktuální cenu a změnu (poslední 2 dny pro výpočet %)
             try:
                 t_data = yf.Ticker(ticker)
                 hist = t_data.history(period="2d")
@@ -64,7 +61,6 @@ for i in range(0, len(watchlist), num_cols):
                 change_pct = 0.0
                 currency = "USD"
 
-            # Formátování cen a barev
             if isinstance(current_price, (int, float)):
                 price_str = f"{current_price:.2f} {currency}"
             else:
@@ -81,7 +77,6 @@ for i in range(0, len(watchlist), num_cols):
                 text_color = "#f85149"
                 sign = ""
 
-            # HTML karta pro dlaždici
             card_html = f"""
             <div style="
                 background-color: {bg_color};
@@ -101,19 +96,24 @@ for i in range(0, len(watchlist), num_cols):
             """
             st.markdown(card_html, unsafe_allow_html=True)
             
-            # Tlačítko pro odstranění firmy z mřížky
             if st.button("❌ Smazat", key=f"del_{ticker}", help=f"Odstranit {ticker} z přehledu"):
                 st.session_state["watchlist"].remove(ticker)
                 st.rerun()
 
 st.divider()
 
-# --- PŮVODNÍ GRAF PRO DETAILNĚ VYBRANÝ TICKET ---
+# --- DETAILNÍ HISTORICKÝ GRAF (VÝCHOZÍ NVDA) ---
 st.subheader("📊 Detailní historický graf vybraného titulu")
-selected_detail_ticker = st.selectbox("Zvol firmu pro detailní zobrazení grafu:", watchlist, index=0)
+
+# Nastavení výchozího indexu na "NVDA", pokud je v seznamu
+default_index = 0
+if "NVDA" in watchlist:
+    default_index = watchlist.index("NVDA")
+
+selected_detail_ticker = st.selectbox("Zvol firmu pro detailní zobrazení grafu:", watchlist, index=default_index)
 
 if selected_detail_ticker:
     detail_hist = yf.Ticker(selected_detail_ticker).history(period="max")
     if not detail_hist.empty:
-        fig = px.line(detail_hist, x=detail_hist.index, y='Close', title=fVývoj ceny: {selected_detail_ticker})
+        fig = px.line(detail_hist, x=detail_hist.index, y='Close', title=f"Vývoj ceny: {selected_detail_ticker}")
         st.plotly_chart(fig, use_container_width=True)
