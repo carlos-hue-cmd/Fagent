@@ -80,24 +80,32 @@ if default_ticker:
             df_comp = pd.DataFrame(comparison_data)
             st.table(df_comp.set_index("Metrika"))
 
-        # Zprávy
+        # Zprávy (ošetřené proti výpadkům)
         st.subheader("📰 Poslední zprávy")
-        news = stock.news
         news_texts = []
-        if news:
-            for item in news[:5]:
-                title = item.get("title")
-                publisher = item.get("publisher")
-                link = item.get("link")
-                news_texts.append(f"- [{title}]({link}) ({publisher})")
-                st.markdown(f"- **[{title}]({link})** *({publisher})*")
-        else:
-            st.info("Žádné zprávy nebyly nalezeny.")
+        try:
+            news = stock.news
+            if news:
+                for item in news[:5]:
+                    title = item.get("title") or item.get("content", {}).get("title")
+                    publisher = item.get("publisher") or item.get("content", {}).get("provider", {}).get("displayName")
+                    link = item.get("link") or item.get("content", {}).get("clickThroughUrl", {}).get("url")
+                    
+                    if title:
+                        news_texts.append(f"- {title} ({publisher})")
+                        if link:
+                            st.markdown(f"- **[{title}]({link})** *({publisher})*")
+                        else:
+                            st.markdown(f"- **{title}** *({publisher})*")
+            if not news_texts:
+                st.info("Yahoo Finance aktuálně neposkytuje pro tento ticker žádné zprávy.")
+        except Exception:
+            st.info("Zprávy se nepodařilo načíst (Yahoo Finance omezilo přístup).")
 
-        # AI Chat s ochranou proti halucinacím
+        # AI Chat s Gemini 3.8 Flash a ochranou proti halucinacím
         st.divider()
         st.subheader("💬 Zeptej se agenta (Gemini AI)")
-        user_query = st.text_input("Zadej dotaz k této firmě (např. 'Shrň poslední zprávy'):")
+        user_query = st.text_input("Zadej dotaz k této firmě (např. 'Zhodnoť aktuální metriky'):")
         
         if user_query:
             if not api_key:
@@ -121,6 +129,7 @@ if default_ticker:
                         {chr(10).join(news_texts) if news_texts else 'Žádné zprávy k dispozici'}
                         """
                         
+                        # Aktualizovaný model podle požadavku Google AI Studio
                         model = genai.GenerativeModel('gemini-3.8-flash')
                         response = model.generate_content([
                             context, 
