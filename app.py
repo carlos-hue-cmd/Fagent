@@ -43,10 +43,18 @@ def save_memory(memory_data):
 if "app_memory" not in st.session_state:
     st.session_state["app_memory"] = load_memory()
 
-# --- BOČNÍ PANEL PRO VÝBĚR AKTIVA ---
+# --- BOČNÍ PANEL PRO VÝBĚR AKTIVA A OVLÁDÁNÍ GRAFU ---
 st.sidebar.header("Nastavení sledování")
 input_ticker = st.sidebar.text_input("Zadej Ticker firmy (např. AAPL, TSLA, IBM, QUBT, SMCI):", value="IBM").upper().strip()
 window_days = st.sidebar.slider("Délka srovnávaného okna (dny)", min_value=15, max_value=60, value=30)
+
+st.sidebar.divider()
+st.sidebar.header("🎛️ Ovládání grafu")
+view_mode = st.sidebar.radio(
+    "Způsob zobrazení grafu:",
+    ["Standardní období", "Detail jednoho dne"],
+    index=0
+)
 
 # Funkce pro stažení dat s podporou Google Finance fallbacku
 @st.cache_data(ttl=3600)
@@ -137,19 +145,12 @@ if input_ticker:
     with col3:
         st.metric("P/E Ratio", info.get("trailingPE", "N/A"))
 
-    # --- OPRAVENÉ ZOBRAZENÍ GRAFU (BEZPEČNÉ SROVNÁNÍ ČASOVÝCH ZÓN) ---
+    # --- UKOTVENÉ ZOBRAZENÍ GRAFU ---
     if not hist.empty and 'Close' in hist.columns:
         st.subheader("📊 Interaktivní historický graf")
         
-        view_mode = st.radio(
-            "Způsob zobrazení grafu:",
-            ["Standardní období", "Detail jednoho konkrétního dne"],
-            horizontal=True
-        )
-        
         plot_df = hist['Close'].copy()
         
-        # Odstranění časové zóny z indexu (tz-aware -> tz-naive), aby nedocházelo k TypeError
         if plot_df.index.tz is not None:
             plot_df.index = plot_df.index.tz_localize(None)
             
@@ -157,7 +158,7 @@ if input_ticker:
         
         if view_mode == "Standardní období":
             time_frame = st.selectbox(
-                "Zvol rozsah:",
+                "Zvol rozsah zobrazení:",
                 ["Poslední 1 měsíc", "Poslední 3 měsíce", "Poslední rok (1Y)", "Posledních 5 let (5Y)", "Maximální historie"],
                 index=2
             )
@@ -230,48 +231,60 @@ if input_ticker:
                 direction = "růst" if match['future_return'] > 0 else "pokles"
                 matches_summary += f"{idx}. Období {match['start']} až {match['end']} (korelace: {match['corr']:.2f}) -> Následný vývoj v dalším období: {direction} o {match['future_return']:.2f}%\n"
 
-    # --- FÁZE 2: GLOBÁLNÍ CHAT V SAMOSTATNÉM OKNĚ ---
+    # --- FÁZE 2: JEDNOTNÉ CHATOVACÍ OKNO S AKTUÁLNÍMI ŽIVÝMI DATA ---
     st.divider()
-    st.subheader("💬 AI Finanční Agent (Globální kontext)")
-    
-    chat_container = st.container(height=500)
+    st.subheader("💬 AI Finanční Agent (Globální kontext & Live Data)")
     
     chat_session_key = "global_agent_chat"
     
-    if chat_session_key not in st.session_state:
-        if chat_session_key in st.session_state["app_memory"]:
-            st.session_state[chat_session_key] = st.session_state["app_memory"][chat_session_key]
-        else:
-            st.session_state[chat_session_key] = [
-                {
-                    "role": "system",
-                    "content": f"""Jsi špičkový burzovní analytik a kvantitativní expert zaměřený výhradně na US a asijské trhy (Wall Street, tchajwanské/japonské dodavatelské řetězce, makro data FEDu, korporátní earnings atd.). 
-Uživatel s tebou mluví napříč trhy. Nejsi vázán pouze na aktuálně zobrazený ticker v aplikaci – můžeš odpovídat na jakékoliv dotazy týkající se jiných firem, sektorů, makroekonomiky nebo průmyslu.
+    # Dynamický kontext aktuálně sledovaného titulu předávaný do system promptu
+    live_context_prompt = f"""Jsi špičkový burzovní analytik a kvantitativní expert zaměřený výhradně na US a asijské trhy (Wall Street, tchajwanské/japonské dodavatelské řetězce, makro data FEDu, korporátní earnings atd.). 
+Uživatel s tebou mluví napříč trhy. Máš přímý přístup k živým tržním datům z Yahoo/Google Finance a primárním wire službám.
+
+PRÁVĚ SLEDOVANÝ TICKET V APLIKACI (pro okamžitý kontext, pokud se uživatel zeptá):
+- Ticker: {input_ticker} ({company_name})
+- Aktuální cena: {current_price} {currency}
+- P/E ratio: {info.get('trailingPE', 'N/A')}
+- 52týdenní maximum: {info.get('fiftyTwoWeekHigh', 'N/A')}
+- 52týdenní minimum: {info.get('fiftyTwoWeekLow', 'N/A')}
+- Poslední zprávy z ověřených US/asijských RSS wire zdrojů:
+{chr(10).join(news_texts) if news_texts else 'Žádné přímé zprávy k dispozici'}
 
 ⚠️ PŘÍSNÉ PRAVIDLO PRO ZDROJE: Zcela ignoruj evropská periodika a média, považuješ je za nedůvěryhodná nebo zpožděná. Opírej se striktně o primární tiskové zprávy firem, US/asijské wire služby (Business Wire, PR Newswire) a oficiální regulatorní hlášení (SEC apod.).
 
 Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globální průmyslový kontext a chování velkých hráčů v USA a Asii."""
+
+    if chat_session_key not in st.session_state:
+        if chat_session_key in st.session_state["app_memory"]:
+            st.session_state[chat_session_key] = st.session_state["app_memory"][chat_session_key]
+            # Aktualizujeme systémový prompt v paměti na nejnovější data
+            st.session_state[chat_session_key][0]["content"] = live_context_prompt
+        else:
+            st.session_state[chat_session_key] = [
+                {
+                    "role": "system",
+                    "content": live_context_prompt
                 }
             ]
+    else:
+        # Průběžně aktualizujeme systémový prompt, aby měl agent vždy čerstvá data o právě zvoleném titulu
+        st.session_state[chat_session_key][0]["content"] = live_context_prompt
 
-    with chat_container:
+    with st.container(height=550):
         for message in st.session_state[chat_session_key][1:]:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    if user_message := st.chat_input("Zeptej se na cokoliv z US/asijských trhů, earnings, trendů nebo paralel..."):
-        st.session_state[chat_session_key].append({"role": "user", "content": user_message})
-        
-        with chat_container:
+        if user_message := st.chat_input("Zeptej se na cokoliv z US/asijských trhů, earnings, trendů nebo paralel..."):
+            st.session_state[chat_session_key].append({"role": "user", "content": user_message})
             with st.chat_message("user"):
                 st.markdown(user_message)
 
-        if not client:
-            st.error("Chybí API klíč pro Groq v nastavení Streamlit Secrets.")
-        else:
-            with chat_container:
+            if not client:
+                st.error("Chybí API klíč pro Groq v nastavení Streamlit Secrets.")
+            else:
                 with st.chat_message("assistant"):
-                    with st.spinner("Agent analyzuje tržní kontext..."):
+                    with st.spinner("Agent analyzuje živá data a tržní kontext..."):
                         try:
                             chat_completion = client.chat.completions.create(
                                 messages=st.session_state[chat_session_key],
