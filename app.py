@@ -123,7 +123,7 @@ if input_ticker:
     else:
         st.warning("Pro tento ticker nejsou k dispozici detailní historická data v rozvržení časové řady.")
 
-    # --- FÁZE 1: MATEMATICKé VYHLEDÁNÍ SHODY V PYTHONU ---
+    # --- FÁZE 1: MATEMATICKÉ VYHLEDÁNÍ SHODY V PYTHONU ---
     def find_historical_matches(df, win_size):
         if df.empty or len(df) < win_size * 2 or 'Close' not in df.columns:
             return []
@@ -217,7 +217,7 @@ Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globál
                     try:
                         chat_completion = client.chat.completions.create(
                             messages=st.session_state[chat_session_key],
-                            model="llama-3.1-8b-instant",
+                            model="openai/gpt-oss-20b", # Stabilní produkční model
                         )
                         assistant_response = chat_completion.choices[0].message.content
                         st.markdown(assistant_response)
