@@ -44,7 +44,7 @@ def fetch_stock_data(ticker):
     except Exception as e:
         source_used = "Google Finance (Fallback)"
         try:
-            url = `https://www.google.com/finance/quote/{ticker}:NASDAQ`
+            url = f"https://www.google.com/finance/quote/{ticker}:NASDAQ"
             headers = {"User-Agent": "Mozilla/5.0"}
             response = requests.get(url, headers=headers, timeout=5)
             if response.status_code == 200:
@@ -70,23 +70,19 @@ def fetch_stock_data(ticker):
 # Funkce pro získání zpráv přes RSS z primárních zdrojů a odfiltrování evropského šumu
 def fetch_filtered_news(ticker):
     news_texts = []
-    # Seznam výrazů indikujících evropská periodika nebo lokální média k vyřazení
     excluded_keywords = [
         "euribor", "reuters deutschland", "handelsblatt", "faz", "bloomberg uk", 
         "milan", "frankfurt", "le monde", "corriere", "el país", "der spiegel", 
         "die welt", "gb news", "uk wire", "london stock exchange news (uk)"
     ]
     
-    # 1. Yahoo Finance RSS pro daný ticker (obsahuje primárně US wire jako BusinessWire, PR Newswire, Zacks, Motley Fool atd.)
-    rss_url = `https://finance.yahoo.com/rss/headline?s={ticker}`
+    rss_url = f"https://finance.yahoo.com/rss/headline?s={ticker}"
     try:
         feed = feedparser.parse(rss_url)
         for entry in feed.entries:
             title = entry.get("title", "")
-            # V RSS bývá zdroj často součástí názvu za pomlčkou nebo v autorovi
             source = entry.get("source", {}).get("title", "US/Global Wire")
             
-            # Kontrola filtru
             combined_text = (title + " " + source).lower()
             if any(ex in combined_text for ex in excluded_keywords):
                 continue
@@ -127,7 +123,7 @@ if input_ticker:
     else:
         st.warning("Pro tento ticker nejsou k dispozici detailní historická data v rozvržení časové řady.")
 
-    # --- FÁZE 1: MATEMATICKÉ VYHLEDÁNÍ SHODY V PYTHONU ---
+    # --- FÁZE 1: MATEMATICKé VYHLEDÁNÍ SHODY V PYTHONU ---
     def find_historical_matches(df, win_size):
         if df.empty or len(df) < win_size * 2 or 'Close' not in df.columns:
             return []
