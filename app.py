@@ -21,7 +21,7 @@ client = Groq(api_key=api_key) if api_key else None
 st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
 st.markdown("Univerzální tržní agent, interaktivní grafy a vytrvalá AI paměť.")
 
-# --- PERSISTENTNÍ PAMĚŤ (UKLÁDÁNÍ HISTORIE DO SOUBORU) ---
+# --- PERSISTENTNÍ PAMĚŤ ---
 MEMORY_FILE = "agent_memory.json"
 
 def load_memory():
@@ -137,7 +137,7 @@ if input_ticker:
     with col3:
         st.metric("P/E Ratio", info.get("trailingPE", "N/A"))
 
-    # --- UPRAVENÉ ZOBRAZENÍ GRAFU (VÝBĚR JEDNOHO DNE / OKNA) ---
+    # --- OPRAVENÉ ZOBRAZENÍ GRAFU (BEZPEČNÉ SROVNÁNÍ ČASOVÝCH ZÓN) ---
     if not hist.empty and 'Close' in hist.columns:
         st.subheader("📊 Interaktivní historický graf")
         
@@ -148,6 +148,11 @@ if input_ticker:
         )
         
         plot_df = hist['Close'].copy()
+        
+        # Odstranění časové zóny z indexu (tz-aware -> tz-naive), aby nedocházelo k TypeError
+        if plot_df.index.tz is not None:
+            plot_df.index = plot_df.index.tz_localize(None)
+            
         max_dt = plot_df.index.max()
         
         if view_mode == "Standardní období":
@@ -165,11 +170,10 @@ if input_ticker:
             elif time_frame == "Posledních 5 let (5Y)":
                 plot_df = plot_df.loc[plot_df.index >= (max_dt - pd.Timedelta(days=1825))]
         else:
-            # Výběr jednoho konkrétního dne
-            min_date = hist.index.min().date()
+            min_date = plot_df.index.min().date()
             max_date = max_dt.date()
             selected_day = st.date_input("Zvol konkrétní den k zobrazení:", max_date, min_value=min_date, max_value=max_date)
-            # Zobrazíme okno kolem zvoleného dne (např. 5 dní před a po pro kontext)
+            
             day_ts = pd.to_datetime(selected_day)
             plot_df = plot_df.loc[(plot_df.index >= day_ts - pd.Timedelta(days=5)) & (plot_df.index <= day_ts + pd.Timedelta(days=5))]
                 
@@ -226,11 +230,10 @@ if input_ticker:
                 direction = "růst" if match['future_return'] > 0 else "pokles"
                 matches_summary += f"{idx}. Období {match['start']} až {match['end']} (korelace: {match['corr']:.2f}) -> Následný vývoj v dalším období: {direction} o {match['future_return']:.2f}%\n"
 
-    # --- FÁZE 2: VYLEPŠENÝ CHAT V SAMOSTATNÉM OKNĚ (NEZÁVISLÝ NA TICKELU) ---
+    # --- FÁZE 2: GLOBÁLNÍ CHAT V SAMOSTATNÉM OKNĚ ---
     st.divider()
     st.subheader("💬 AI Finanční Agent (Globální kontext)")
     
-    # Celý chat uzavřeme do vizuálního kontejneru s větším prostorem
     chat_container = st.container(height=500)
     
     chat_session_key = "global_agent_chat"
@@ -243,7 +246,7 @@ if input_ticker:
                 {
                     "role": "system",
                     "content": f"""Jsi špičkový burzovní analytik a kvantitativní expert zaměřený výhradně na US a asijské trhy (Wall Street, tchajwanské/japonské dodavatelské řetězce, makro data FEDu, korporátní earnings atd.). 
-Uživatel s tebou mluví napříč trhy. Aktuálně má v aplikaci zobrazený ticker {company_name} ({input_ticker}), ale nejsi na něj vázán – můžeš odpovídat na jakékoliv dotazy týkající se jiných firem, sektoru, makroekonomiky nebo průmyslu.
+Uživatel s tebou mluví napříč trhy. Nejsi vázán pouze na aktuálně zobrazený ticker v aplikaci – můžeš odpovídat na jakékoliv dotazy týkající se jiných firem, sektorů, makroekonomiky nebo průmyslu.
 
 ⚠️ PŘÍSNÉ PRAVIDLO PRO ZDROJE: Zcela ignoruj evropská periodika a média, považuješ je za nedůvěryhodná nebo zpožděná. Opírej se striktně o primární tiskové zprávy firem, US/asijské wire služby (Business Wire, PR Newswire) a oficiální regulatorní hlášení (SEC apod.).
 
@@ -251,13 +254,11 @@ Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globál
                 }
             ]
 
-    # Vykreslení historie uvnitř kontejneru
     with chat_container:
         for message in st.session_state[chat_session_key][1:]:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # Vstup pro novou zprávu mimo kontejner dole
     if user_message := st.chat_input("Zeptej se na cokoliv z US/asijských trhů, earnings, trendů nebo paralel..."):
         st.session_state[chat_session_key].append({"role": "user", "content": user_message})
         
