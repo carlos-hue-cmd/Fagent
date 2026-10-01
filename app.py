@@ -138,13 +138,11 @@ if input_ticker:
     with col3:
         st.metric("P/E Ratio", info.get("trailingPE", "N/A"))
 
-    # --- INTERAKTIVNÍ GRAF PŘES PLOTLY (S JEDNOCENÝM TOOLTIPEM) ---
+    # --- INTERAKTIVNÍ GRAF PŘES PLOTLY ---
     if not hist.empty and 'Close' in hist.columns:
         st.subheader("📊 Interaktivní historický graf")
         
         plot_df = hist['Close'].reset_index()
-        
-        # Ošetření časové zóny sloupcového indexu
         date_col = plot_df.columns[0]
         if plot_df[date_col].dt.tz is not None:
             plot_df[date_col] = plot_df[date_col].dt.tz_localize(None)
@@ -293,8 +291,16 @@ Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globál
             with st.chat_message("assistant"):
                 with st.spinner("Agent analyzuje živá data a tržní kontext..."):
                     try:
+                        # OŘEZÁNÍ HISTORIE PRO AI (ochrana proti TPM limitu 8000 tokenů na Groq)
+                        # Vždy pošleme systémový prompt (index 0) + maximálně posledních 6 zpráv konverzace
+                        messages_to_send = [st.session_state[chat_session_key][0]]
+                        if len(st.session_state[chat_session_key]) > 7:
+                            messages_to_send.extend(st.session_state[chat_session_key][-6:])
+                        else:
+                            messages_to_send.extend(st.session_state[chat_session_key][1:])
+
                         chat_completion = client.chat.completions.create(
-                            messages=st.session_state[chat_session_key],
+                            messages=messages_to_send,
                             model="openai/gpt-oss-20b",
                         )
                         assistant_response = chat_completion.choices[0].message.content
