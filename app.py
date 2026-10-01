@@ -2,21 +2,20 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import os
-import google.generativeai as genai
+from groq import Groq
 
 # Nastavení stránky
 st.set_page_config(page_title="Yahoo Finance Agent", page_icon="📈", layout="centered")
 
-# Načtení klíče ze Streamlit Secrets
-if "GEMINI_API_KEY" in st.secrets:
-    os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+# Načtení Groq API klíče ze Streamlit Secrets
+if "GROQ_API_KEY" in st.secrets:
+    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
 
-api_key = os.environ.get("GEMINI_API_KEY")
-if api_key:
-    genai.configure(api_key=api_key)
+api_key = os.environ.get("GROQ_API_KEY")
+client = Groq(api_key=api_key) if api_key else None
 
-st.title("📈 Yahoo Finance Agent s Gemini")
-st.markdown("Tvůj osobní mobilní agent pro analýzu akcií, porovnání a AI dotazy.")
+st.title("📈 Yahoo Finance Agent s Groq (Llama 3)")
+st.markdown("Tvůj osobní mobilní agent pro analýzu akcií, porovnání a AI dotazy bez limitů.")
 
 # Boční panel
 st.sidebar.header("Nastavení")
@@ -80,7 +79,7 @@ if default_ticker:
             df_comp = pd.DataFrame(comparison_data)
             st.table(df_comp.set_index("Metrika"))
 
-        # Zprávy (ošetřené proti výpadkům)
+        # Zprávy
         st.subheader("📰 Poslední zprávy")
         news_texts = []
         try:
@@ -100,23 +99,23 @@ if default_ticker:
             if not news_texts:
                 st.info("Yahoo Finance aktuálně neposkytuje pro tento ticker žádné zprávy.")
         except Exception:
-            st.info("Zprávy se nepodařilo načíst (Yahoo Finance omezilo přístup).")
+            st.info("Zprávy se nepodařilo načíst.")
 
-        # AI Chat s Gemini 3.8 Flash a ochranou proti halucinacím
+        # AI Chat s Groq (Llama 3) a ochranou proti halucinacím
         st.divider()
-        st.subheader("💬 Zeptej se agenta (Gemini AI)")
+        st.subheader("💬 Zeptej se agenta (Llama 3)")
         user_query = st.text_input("Zadej dotaz k této firmě (např. 'Zhodnoť aktuální metriky'):")
         
         if user_query:
-            if not api_key:
-                st.error("Chybí API klíč pro Gemini v nastavení Streamlit Secrets.")
+            if not client:
+                st.error("Chybí API klíč pro Groq v nastavení Streamlit Secrets.")
             else:
-                with st.spinner("Gemini analyzuje data..."):
+                with st.spinner("Groq analyzuje data..."):
                     try:
-                        context = f"""
+                        system_prompt = f"""
                         Jsi přísný finanční analytik. Tvým úkolem je odpovědět na dotaz uživatele POUZE a JENOM na základě dat uvedených níže. 
                         Pokud odpověď v datech není, napiš: "Tuto informaci v aktuálních datech nemám."
-                        Nesmíš si vymýšlet žádná čísla, ceny ani události.
+                        Nesmíš si vymýšlet žádná čísla, ceny ani události. Odpovídej v češtině.
 
                         DATA PRO AKCII {default_ticker} ({company_name}):
                         - Aktuální cena: {current_price} {currency}
@@ -129,17 +128,18 @@ if default_ticker:
                         {chr(10).join(news_texts) if news_texts else 'Žádné zprávy k dispozici'}
                         """
                         
-                        # Aktualizovaný model podle požadavku Google AI Studio
-                        model = genai.GenerativeModel('gemini-3.8-flash')
-                        response = model.generate_content([
-                            context, 
-                            f"Dotaz uživatele: {user_query}. Odpověz česky a striktně jen podle výše uvedených dat!"
-                        ])
+                        chat_completion = client.chat.completions.create(
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_query}
+                            ],
+                            model="llama-3.3-70b-versatile", # Velmi schopný a rychlý model na Groqu
+                        )
                         
                         st.markdown("### Odpověď agenta:")
-                        st.write(response.text)
+                        st.write(chat_completion.choices[0].message.content)
                     except Exception as e:
-                        st.error(f"Chyba při komunikaci s Gemini API: {e}")
+                        st.error(f"Chyba při komunikaci s Groq API: {e}")
 
     except Exception as e:
         st.error(f"Nepodařilo se načíst data pro ticker {default_ticker}. Chyba: {e}")
