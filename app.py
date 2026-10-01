@@ -25,7 +25,7 @@ if "watchlist" not in st.session_state:
         "QCOM", "AVGO", "ASML", "ARM"
     ]
 
-# --- SEKCE 1: RYCHLÝ PŘEHLED SEKTORU (CSS GRID - GARANTOVANÉ SLOUPCE) ---
+# --- SEKCE 1: RYCHLÝ PŘEHLED SEKTORU (NATIVNÍ STREAMLIT MŘÍŽKA 4 SLOUPCE) ---
 st.subheader("⚡ Watchlist & Rychlý přehled sektoru")
 
 # Formulář pro přidání nové firmy
@@ -43,85 +43,62 @@ with st.expander("➕ Přidat novou firmu do mřížky"):
 
 watchlist = st.session_state["watchlist"]
 
-# CSS pro mřížku (4 sloupce na desktopu, 2 na mobilu)
-grid_style = """
-<style>
-.custom-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
-    margin-bottom: 20px;
-}
-@media (max-width: 768px) {
-    .custom-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-.grid-card {
-    border-radius: 8px;
-    padding: 10px;
-    text-align: center;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-</style>
-"""
+# Vykreslení karet po 4 sloupcích na řádek
+cols_per_row = 4
+for i in range(0, len(watchlist), cols_per_row):
+    row_tickers = watchlist[i:i + cols_per_row]
+    cols = st.columns(cols_per_row)
+    
+    for idx, ticker in enumerate(row_tickers):
+        with cols[idx]:
+            try:
+                t_data = yf.Ticker(ticker)
+                hist = t_data.history(period="2d")
+                info = t_data.info
+                
+                current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+                if not current_price and not hist.empty:
+                    current_price = hist['Close'].iloc[-1]
+                
+                if len(hist) >= 2:
+                    prev_close = hist['Close'].iloc[-2]
+                    curr_close = hist['Close'].iloc[-1]
+                    change_pct = ((curr_close - prev_close) / prev_close) * 100
+                else:
+                    change_pct = 0.0
+                    
+                currency = info.get("currency", "USD")
+            except Exception:
+                current_price = "N/A"
+                change_pct = 0.0
+                currency = "USD"
 
-# Sestavení HTML mřížky do jednoho řetězce
-cards_html = "<div class='custom-grid'>"
+            if isinstance(current_price, (int, float)):
+                price_str = f"{current_price:.2f} {currency}"
+            else:
+                price_str = "N/A"
 
-for ticker in watchlist:
-    try:
-        t_data = yf.Ticker(ticker)
-        hist = t_data.history(period="2d")
-        info = t_data.info
-        
-        current_price = info.get("currentPrice") or info.get("regularMarketPrice")
-        if not current_price and not hist.empty:
-            current_price = hist['Close'].iloc[-1]
-        
-        if len(hist) >= 2:
-            prev_close = hist['Close'].iloc[-2]
-            curr_close = hist['Close'].iloc[-1]
-            change_pct = ((curr_close - prev_close) / prev_close) * 100
-        else:
-            change_pct = 0.0
-            
-        currency = info.get("currency", "USD")
-    except Exception:
-        current_price = "N/A"
-        change_pct = 0.0
-        currency = "USD"
+            if change_pct >= 0:
+                bg_color = "rgba(46, 160, 67, 0.12)"
+                border_color = "#2ea043"
+                text_color = "#3fb950"
+                sign = "+"
+            else:
+                bg_color = "rgba(248, 81, 73, 0.12)"
+                border_color = "#f85149"
+                text_color = "#f85149"
+                sign = ""
 
-    if isinstance(current_price, (int, float)):
-        price_str = f"{current_price:.2f} {currency}"
-    else:
-        price_str = "N/A"
-
-    if change_pct >= 0:
-        bg_color = "rgba(46, 160, 67, 0.12)"
-        border_color = "#2ea043"
-        text_color = "#3fb950"
-        sign = "+"
-    else:
-        bg_color = "rgba(248, 81, 73, 0.12)"
-        border_color = "#f85149"
-        text_color = "#f85149"
-        sign = ""
-
-    cards_html += f"""
-    <div class="grid-card" style="background-color: {bg_color}; border: 1px solid {border_color};">
-        <h4 style="margin: 0; color: inherit;">{ticker}</h4>
-        <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.8;">{price_str}</p>
-        <h3 style="margin: 4px 0 0 0; color: {text_color}; font-size: 18px;">
-            {sign}{change_pct:.2f}%
-        </h3>
-    </div>
-    """
-
-cards_html += "</div>"
-
-# Vykreslení celé mřížky najednou
-st.markdown(grid_style + cards_html, unsafe_allow_html=True)
+            card_html = f"""
+            <div style="background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <h4 style="margin: 0; color: inherit;">{ticker}</h4>
+                <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.8;">{price_str}</p>
+                <h3 style="margin: 4px 0 0 0; color: {text_color}; font-size: 18px;">
+                    {sign}{change_pct:.2f}%
+                </h3>
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)
 
 # Správa / Odebírání firem ze seznamu
 with st.expander("🗑️ Správa / Odebírání firem ze seznamu"):
