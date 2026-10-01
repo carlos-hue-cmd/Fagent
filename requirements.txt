@@ -1,9 +1,8 @@
 streamlit
 yfinance
 pandas
-groq
 requests
 beautifulsoup4
 feedparser
+groq
 plotly
-
