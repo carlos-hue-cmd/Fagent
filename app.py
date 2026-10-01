@@ -7,6 +7,7 @@ import os
 import json
 import feedparser
 from groq import Groq
+import plotly.express as px
 
 # Nastavení stránky
 st.set_page_config(page_title="Hybrid Market Pattern Agent", page_icon="📈", layout="centered")
@@ -19,7 +20,7 @@ api_key = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=api_key) if api_key else None
 
 st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
-st.markdown("Univerzální tržní agent, interaktivní grafy a vytrvalá AI paměť.")
+st.markdown("Univerzální tržní agent, interaktivní Plotly grafy a vytrvalá AI paměť.")
 
 # --- PERSISTENTNÍ PAMĚŤ ---
 MEMORY_FILE = "agent_memory.json"
@@ -137,33 +138,56 @@ if input_ticker:
     with col3:
         st.metric("P/E Ratio", info.get("trailingPE", "N/A"))
 
-    # --- GRAF S PŘEHLEDNÝM VÝBĚREM OBDOBÍ ---
+    # --- INTERAKTIVNÍ GRAF PŘES PLOTLY (S JEDNOCENÝM TOOLTIPEM) ---
     if not hist.empty and 'Close' in hist.columns:
         st.subheader("📊 Interaktivní historický graf")
         
-        plot_df = hist['Close'].copy()
+        plot_df = hist['Close'].reset_index()
         
-        if plot_df.index.tz is not None:
-            plot_df.index = plot_df.index.tz_localize(None)
+        # Ošetření časové zóny sloupcového indexu
+        date_col = plot_df.columns[0]
+        if plot_df[date_col].dt.tz is not None:
+            plot_df[date_col] = plot_df[date_col].dt.tz_localize(None)
             
-        max_dt = plot_df.index.max()
+        max_dt = plot_df[date_col].max()
         
         time_frame = st.selectbox(
             "Zvol rozsah zobrazení grafu:",
-            ["Poslední 1 měsíc", "Poslední 3 měsíce", "Poslední rok (1Y)", "Posledních 5 let (5Y)", "Maximální historie"],
+            [
+                "Poslední den",
+                "Poslední týden",
+                "Poslední 1 měsíc",
+                "Poslední 3 měsíce",
+                "Poslední rok (1Y)",
+                "Posledních 5 let (5Y)",
+                "Maximální historie"
+            ],
             index=2
         )
         
-        if time_frame == "Poslední 1 měsíc":
-            plot_df = plot_df.loc[plot_df.index >= (max_dt - pd.Timedelta(days=30))]
+        if time_frame == "Poslední den":
+            plot_df = plot_df[plot_df[date_col] >= (max_dt - pd.Timedelta(days=1))]
+        elif time_frame == "Poslední týden":
+            plot_df = plot_df[plot_df[date_col] >= (max_dt - pd.Timedelta(days=7))]
+        elif time_frame == "Poslední 1 měsíc":
+            plot_df = plot_df[plot_df[date_col] >= (max_dt - pd.Timedelta(days=30))]
         elif time_frame == "Poslední 3 měsíce":
-            plot_df = plot_df.loc[plot_df.index >= (max_dt - pd.Timedelta(days=90))]
+            plot_df = plot_df[plot_df[date_col] >= (max_dt - pd.Timedelta(days=90))]
         elif time_frame == "Poslední rok (1Y)":
-            plot_df = plot_df.loc[plot_df.index >= (max_dt - pd.Timedelta(days=365))]
+            plot_df = plot_df[plot_df[date_col] >= (max_dt - pd.Timedelta(days=365))]
         elif time_frame == "Posledních 5 let (5Y)":
-            plot_df = plot_df.loc[plot_df.index >= (max_dt - pd.Timedelta(days=1825))]
+            plot_df = plot_df[plot_df[date_col] >= (max_dt - pd.Timedelta(days=1825))]
             
-        st.line_chart(plot_df)
+        fig = px.line(plot_df, x=date_col, y='Close')
+        fig.update_traces(hovertemplate='<b>Datum</b>: %{x|%Y-%m-%d}<br><b>Cena</b>: %{y:.2f} ' + currency)
+        fig.update_layout(
+            xaxis_title="Datum", 
+            yaxis_title=f"Cena ({currency})", 
+            hovermode="x unified",
+            margin=dict(l=10, r=10, t=10, b=10)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("Pro tento ticker nejsou k dispozici detailní historická data.")
 
@@ -257,7 +281,7 @@ Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globál
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Nativní chat input na spodku stránky
+    # Nativní chat input
     if user_message := st.chat_input("Zeptej se na cokoliv z US/asijských trhů, earnings, trendů nebo paralel..."):
         st.session_state[chat_session_key].append({"role": "user", "content": user_message})
         with st.chat_message("user"):
