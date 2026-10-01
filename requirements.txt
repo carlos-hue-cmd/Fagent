@@ -5,4 +5,5 @@ groq
 requests
 beautifulsoup4
 feedparser
+plotly
 
