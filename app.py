@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 import os
+import feedparser
 from groq import Groq
 
 # Nastavení stránky
@@ -16,13 +17,13 @@ if "GROQ_API_KEY" in st.secrets:
 api_key = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=api_key) if api_key else None
 
-st.title("📈 Hybridní Agent: Yahoo & Google Finance + AI")
-st.markdown("Matematické vyhledávání historických shod, duální zdroj dat a expertní vyhodnocení přes Groq.")
+st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
+st.markdown("Sledování trhu, matematické historické paralely a AI chat s filtrací na US/Asijské primární zdroje a wire služby.")
 
-# Boční panel
-st.sidebar.header("Nastavení analýzy")
-default_ticker = st.sidebar.text_input("Sledovaný Ticker (např. IBM, AAPL)", value="IBM").upper()
-compare_ticker = st.sidebar.text_input("Srovnání (nepovinné)", value="AAPL").upper()
+# --- BOČNÍ PANEL PRO VÝBĚR AKTIVA ---
+st.sidebar.header("Nastavení sledování")
+input_ticker = st.sidebar.text_input("Zadej Ticker firmy (např. AAPL, TSLA, IBM, QUBT, SMCI):", value="IBM").upper().strip()
+compare_ticker = st.sidebar.text_input("Srovnání (nepovinné, např. MSFT):", value="").upper().strip()
 window_days = st.sidebar.slider("Délka srovnávaného okna (dny)", min_value=15, max_value=60, value=30)
 
 # Funkce pro stažení dat s podporou Google Finance fallbacku
@@ -32,26 +33,22 @@ def fetch_stock_data(ticker):
     info = {}
     source_used = "Yahoo Finance"
     
-    # Pokus 1: Yahoo Finance
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
         history_df = stock.history(period="max")
         
-        # Pokud yfinance vrátí prázdno, vyvoláme výjimku pro přechod na fallback
         if history_df.empty or 'Close' not in history_df.columns:
             raise ValueError("Yahoo Finance vrátilo prázdná data.")
             
     except Exception as e:
-        # Pokus 2: Fallback na Google Finance (získání aktuální ceny a základu přes scraping)
         source_used = "Google Finance (Fallback)"
         try:
-            url = f"https://www.google.com/finance/quote/{ticker}:NASDAQ" # případně NYSE, zkusíme obecně
+            url = `https://www.google.com/finance/quote/{ticker}:NASDAQ`
             headers = {"User-Agent": "Mozilla/5.0"}
             response = requests.get(url, headers=headers, timeout=5)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                # Hledání aktuální ceny v Google Finance struktuře
                 price_div = soup.find(attrs={"jsname": "vWLAgc"})
                 if price_div:
                     raw_price = price_div.text.replace(',', '').replace('$', '')
@@ -65,24 +62,54 @@ def fetch_stock_data(ticker):
                         "fiftyTwoWeekHigh": "N/A",
                         "fiftyTwoWeekLow": "N/A"
                     }
-                    # Vytvoříme alespoň simulovaný/základní DataFrame, pokud chybí hluboká historie
-                    # Pozn.: Google Finance nemá jednoduše přístupnou celou matici historie přes prostý GET, 
-                    # proto pro hlubokou historii doporučujeme Yahoo, ale aspoň nezůstaneme zcela bez dat.
-        except Exception as google_err:
+        except Exception:
             pass
             
     return history_df, info, source_used
 
-if default_ticker:
-    with st.spinner("Stahuji tržní data..."):
-        hist, info, data_source = fetch_stock_data(default_ticker)
+# Funkce pro získání zpráv přes RSS z primárních zdrojů a odfiltrování evropského šumu
+def fetch_filtered_news(ticker):
+    news_texts = []
+    # Seznam výrazů indikujících evropská periodika nebo lokální média k vyřazení
+    excluded_keywords = [
+        "euribor", "reuters deutschland", "handelsblatt", "faz", "bloomberg uk", 
+        "milan", "frankfurt", "le monde", "corriere", "el país", "der spiegel", 
+        "die welt", "gb news", "uk wire", "london stock exchange news (uk)"
+    ]
     
-    company_name = info.get("longName", default_ticker)
+    # 1. Yahoo Finance RSS pro daný ticker (obsahuje primárně US wire jako BusinessWire, PR Newswire, Zacks, Motley Fool atd.)
+    rss_url = `https://finance.yahoo.com/rss/headline?s={ticker}`
+    try:
+        feed = feedparser.parse(rss_url)
+        for entry in feed.entries:
+            title = entry.get("title", "")
+            # V RSS bývá zdroj často součástí názvu za pomlčkou nebo v autorovi
+            source = entry.get("source", {}).get("title", "US/Global Wire")
+            
+            # Kontrola filtru
+            combined_text = (title + " " + source).lower()
+            if any(ex in combined_text for ex in excluded_keywords):
+                continue
+                
+            news_texts.append(f"- {title} ({source})")
+            if len(news_texts) >= 6:
+                break
+    except Exception:
+        pass
+        
+    return news_texts
+
+if input_ticker:
+    with st.spinner(f"Stahuji tržní data a primární zprávy pro {input_ticker}..."):
+        hist, info, data_source = fetch_stock_data(input_ticker)
+        news_texts = fetch_filtered_news(input_ticker)
+    
+    company_name = info.get("longName", input_ticker)
     currency = info.get("currency", "USD")
     current_price = info.get("currentPrice") or info.get("regularMarketPrice", info.get("previousClose", "N/A"))
     
-    st.header(f"{company_name} ({default_ticker})")
-    st.caption(f"Zdroj dat: **{data_source}**")
+    st.header(f"{company_name} ({input_ticker})")
+    st.caption(f"Zdroj dat: **{data_source}** | Zprávy: **Filtrované US & Asijské primární RSS wire služby**")
     
     # Metriky
     col1, col2, col3 = st.columns(3)
@@ -93,26 +120,12 @@ if default_ticker:
     with col3:
         st.metric("P/E Ratio", info.get("trailingPE", "N/A"))
 
-    # Graf vývoje (pokud máme historická data)
+    # Graf vývoje
     if not hist.empty and 'Close' in hist.columns:
         st.subheader("📊 Historický vývoj a kontext")
         st.line_chart(hist['Close'].tail(500))
     else:
         st.warning("Pro tento ticker nejsou k dispozici detailní historická data v rozvržení časové řady.")
-
-    # Zprávy / Sentiment (pokud jsou k dispozici přes yfinance)
-    news_texts = []
-    try:
-        stock_obj = yf.Ticker(default_ticker)
-        news = stock_obj.news
-        if news:
-            for item in news[:5]:
-                title = item.get("title") or item.get("content", {}).get("title")
-                publisher = item.get("publisher") or item.get("content", {}).get("provider", {}).get("displayName")
-                if title:
-                    news_texts.append(f"- {title} ({publisher})")
-    except Exception:
-        pass
 
     # --- FÁZE 1: MATEMATICKÉ VYHLEDÁNÍ SHODY V PYTHONU ---
     def find_historical_matches(df, win_size):
@@ -154,56 +167,64 @@ if default_ticker:
                     break
         return top_matches
 
+    matches_summary = "Zatím nebyly spočítány historické korelace."
+    if not hist.empty and len(hist) >= window_days * 2:
+        matches = find_historical_matches(hist, window_days)
+        if matches:
+            matches_summary = ""
+            for idx, match in enumerate(matches, 1):
+                direction = "růst" if match['future_return'] > 0 else "pokles"
+                matches_summary += f"{idx}. Období {match['start']} až {match['end']} (korelace: {match['corr']:.2f}) -> Následný vývoj v dalším období: {direction} o {match['future_return']:.2f}%\n"
+
+    # --- FÁZE 2: PLNOHODNOTNÝ INTERAKTIVNÍ CHAT S AGENTEM ---
     st.divider()
-    st.subheader("🔍 Hybridní analýza tržních vzorců")
+    st.subheader(f"💬 Chat s Finančním Agentem ({input_ticker})")
     
-    if st.button("Spustit hledání a AI vyhodnocení"):
+    chat_session_key = f"messages_{input_ticker}"
+    if chat_session_key not in st.session_state:
+        st.session_state[chat_session_key] = [
+            {
+                "role": "system",
+                "content": f"""Jsi špičkový burzovní analytik a kvantitativní expert zaměřený výhradně na US a asijské trhy (Wall Street, tchajwanské/japonské dodavatelské řetězce, makro data FEDu atd.). 
+Pomáháš uživateli sledovat akcii {company_name} ({input_ticker}). 
+
+⚠️ PŘÍSNÉ PRAVIDLO PRO ZDROJE: Zcela ignoruj evropská periodika a média, považuješ je za nedůvěryhodná nebo zpožděná. Opírej se striktně o primární tiskové zprávy firem, US/asijské wire služby (Business Wire, PR Newswire) a oficiální regulatorní hlášení (SEC apod.).
+
+Máš k dispozici tyto aktuální údaje a matematicky spočítané historické paralely za posledních {window_days} dní:
+- Aktuální cena: {current_price} {currency}
+- P/E ratio: {info.get('trailingPE', 'N/A')}
+- 52týdenní maximum: {info.get('fiftyTwoWeekHigh', 'N/A')}
+- 52týdenní minimum: {info.get('fiftyTwoWeekLow', 'N/A')}
+- Top historické shody zjištěné algoritmem:
+{matches_summary}
+- Poslední zprávy z ověřených US/asijských RSS wire zdrojů:
+{chr(10).join(news_texts) if news_texts else 'Žádné přímé zprávy k dispozici'}
+
+Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globální průmyslový kontext a chování velkých hráčů v USA a Asii."""
+            }
+        ]
+
+    for message in st.session_state[chat_session_key][1:]:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    if user_message := st.chat_input("Zeptej se na vývoj, průmyslový kontext, US/asijské vlivy nebo historické paralely..."):
+        st.session_state[chat_session_key].append({"role": "user", "content": user_message})
+        with st.chat_message("user"):
+            st.markdown(user_message)
+
         if not client:
             st.error("Chybí API klíč pro Groq v nastavení Streamlit Secrets.")
-        elif hist.empty or len(hist) < window_days * 2:
-            st.error("Nedostatek historických dat pro matematický výpočet korelací.")
         else:
-            with st.spinner("Fáze 1: Python prohledává historická data a počítá korelace..."):
-                matches = find_historical_matches(hist, window_days)
-            
-            if not matches:
-                st.warning("Nepodařilo se nalézt dostatečné historické shody.")
-            else:
-                st.success("Matematické shody úspěšně spočítány. Předávám modelům Groq (Llama 3.3)...")
-                
-                matches_summary = ""
-                for idx, match in enumerate(matches, 1):
-                    direction = "růst" if match['future_return'] > 0 else "pokles"
-                    matches_summary += f"{idx}. Období {match['start']} až {match['end']} (korelace: {match['corr']:.2f}) -> Následný vývoj v dalším období: {direction} o {match['future_return']:.2f}%\n"
-
-                with st.spinner("Fáze 2: Groq (Llama 3.3 70B) analyzuje kontext a tvoří predikci..."):
+            with st.chat_message("assistant"):
+                with st.spinner("Agent analyzuje US/asijský kontext z primárních zdrojů..."):
                     try:
-                        system_prompt = "Jsi expert na burzovní analýzu a behaviorální finance. Tvým úkolem je porovnat aktuální tržní situaci s historickými analogy, které ti dodal systém, zohlednit aktuální zprávy a určit pravděpodobný scénář vývoje. Odpovídej věcně a strukturovaně v češtině."
-                        
-                        user_prompt = f"""
-                        Aktuální ticker: {company_name} ({default_ticker})
-                        - Aktuální cena: {current_price} {currency}
-                        - P/E ratio: {info.get('trailingPE', 'N/A')}
-                        
-                        Top 3 historické shody vypočítané algoritmicky z cenového vývoje za posledních {window_days} dní:
-                        {matches_summary}
-                        
-                        Aktuální zprávy / sentiment na trhu:
-                        {chr(10).join(news_texts) if news_texts else 'Žádné specifické zprávy'}
-                        
-                        Úkol: Zanalizuj tyto 3 historické scénáře v kontextu aktuálních metrik a zpráv. Vyhodnoť, ke kterému z těchto historických scénářů má akcie dnes nejblíže a jaký pravděpodobný směr vývoje to indikuje.
-                        """
-                        
                         chat_completion = client.chat.completions.create(
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt}
-                            ],
+                            messages=st.session_state[chat_session_key],
                             model="llama-3.3-70b-versatile",
                         )
-                        
-                        st.markdown("### Výsledek hybridní analýzy:")
-                        st.write(chat_completion.choices[0].message.content)
-                        
+                        assistant_response = chat_completion.choices[0].message.content
+                        st.markdown(assistant_response)
+                        st.session_state[chat_session_key].append({"role": "assistant", "content": assistant_response})
                     except Exception as e:
                         st.error(f"Chyba při komunikaci s Groq API: {e}")
