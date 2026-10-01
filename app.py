@@ -121,7 +121,7 @@ if default_ticker:
                         {chr(10).join(news_texts) if news_texts else 'Žádné zprávy k dispozici'}
                         """
                         
-                        model = genai.GenerativeModel('gemini-2.0-flash')
+                        model = genai.GenerativeModel('gemini-3.8-flash')
                         response = model.generate_content([
                             context, 
                             f"Dotaz uživatele: {user_query}. Odpověz česky a striktně jen podle výše uvedených dat!"
