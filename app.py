@@ -40,7 +40,6 @@ def save_memory(memory_data):
     except Exception:
         pass
 
-# Inicializace stavu paměti v session
 if "app_memory" not in st.session_state:
     st.session_state["app_memory"] = load_memory()
 
@@ -90,7 +89,6 @@ def fetch_stock_data(ticker):
             
     return history_df, info, source_used
 
-# Funkce pro získání zpráv přes RSS z primárních zdrojů a odfiltrování evropského šumu
 def fetch_filtered_news(ticker):
     news_texts = []
     excluded_keywords = [
@@ -139,11 +137,10 @@ if input_ticker:
     with col3:
         st.metric("P/E Ratio", info.get("trailingPE", "N/A"))
 
-    # --- UPRAVENÉ ZOBRAZENÍ GRAFU (VÝBĚR OBDOBÍ / MĚSÍCE / DNE) ---
+    # --- OPRAVENÉ ZOBRAZENÍ GRAFU ---
     if not hist.empty and 'Close' in hist.columns:
         st.subheader("📊 Interaktivní historický graf")
         
-        # Volba rozsahu zobrazení
         time_frame = st.selectbox(
             "Zvol rozsah zobrazení grafu:",
             ["Poslední 1 měsíc", "Poslední 3 měsíce", "Poslední rok (1Y)", "Posledních 5 let (5Y)", "Vlastní výběr data", "Maximální historie"],
@@ -151,19 +148,24 @@ if input_ticker:
         )
         
         plot_df = hist['Close'].copy()
+        max_dt = plot_df.index.max()
         
         if time_frame == "Poslední 1 měsíc":
-            plot_df = plot_df.last("30D")
+            start_limit = max_dt - pd.Timedelta(days=30)
+            plot_df = plot_df.loc[plot_df.index >= start_limit]
         elif time_frame == "Poslední 3 měsíce":
-            plot_df = plot_df.last("90D")
+            start_limit = max_dt - pd.Timedelta(days=90)
+            plot_df = plot_df.loc[plot_df.index >= start_limit]
         elif time_frame == "Poslední rok (1Y)":
-            plot_df = plot_df.last("365D")
+            start_limit = max_dt - pd.Timedelta(days=365)
+            plot_df = plot_df.loc[plot_df.index >= start_limit]
         elif time_frame == "Posledních 5 let (5Y)":
-            plot_df = plot_df.last("1825D")
+            start_limit = max_dt - pd.Timedelta(days=1825)
+            plot_df = plot_df.loc[plot_df.index >= start_limit]
         elif time_frame == "Vlastní výběr data":
             min_date = hist.index.min().date()
-            max_date = hist.index.max().date()
-            date_range = st.date_input("Zvol období od - do:", [max_date - pd.Timedelta(days=180), max_date], min_value=min_date, max_value=max_date)
+            max_date = max_dt.date()
+            date_range = st.date_input("Zvol období od - do:", [max_date - pd.Timedelta(days=180).days * pd.Timedelta(days=1), max_date], min_value=min_date, max_value=max_date)
             if len(date_range) == 2:
                 start_d, end_d = date_range
                 plot_df = plot_df.loc[str(start_d):str(end_d)]
@@ -227,7 +229,6 @@ if input_ticker:
     
     chat_session_key = f"messages_{input_ticker}"
     
-    # Načtení z permanentní paměti pokud existuje, jinak inicializace
     if chat_session_key not in st.session_state:
         if chat_session_key in st.session_state["app_memory"]:
             st.session_state[chat_session_key] = st.session_state["app_memory"][chat_session_key]
@@ -254,7 +255,6 @@ Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globál
                 }
             ]
 
-    # Zobrazení chatu
     for message in st.session_state[chat_session_key][1:]:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -277,10 +277,8 @@ Odpovídej věcně, inteligentně a přirozeně v češtině. Zohledňuj globál
                         assistant_response = chat_completion.choices[0].message.content
                         st.markdown(assistant_response)
                         
-                        # Přidání odpovědi do historie
                         st.session_state[chat_session_key].append({"role": "assistant", "content": assistant_response})
                         
-                        # Uložení stavu do permanentní paměti
                         st.session_state["app_memory"][chat_session_key] = st.session_state[chat_session_key]
                         save_memory(st.session_state["app_memory"])
                         
