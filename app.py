@@ -135,38 +135,69 @@ st.divider()
 # --- SEKCE 3: CHAT S ASISTENTEM A TLAČÍTKO KOPÍROVAT ---
 st.subheader("💬 AI Finanční Agent (Globální kontext & Live Data)")
 
-# Vykreslení celé historie chatu
+# Vykreslení historie chatu
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Zpracování nového vstupu od uživatele
+# Zpracování nového vstupu
 if prompt := st.chat_input("Zeptej se na trhy, akcie nebo anomálie..."):
-    # Uložení uživatelské zprávy do historie
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Generování chytřejší odpovědi na základě watchlistu a dotazu
-    # Zde můžeš napojit vlastní logiku nebo LLM volání, aktuálně reálně analyzuje dotaz
     prompt_lower = prompt.lower()
-    found_tickers = [t for t in watchlist if t.lower() in prompt_lower]
     
-    if found_tickers:
-        response_parts = []
-        for t in found_tickers:
+    # Inteligentní detekce dotazů na zprávy, prohlášení a tech sektor
+    if any(keyword in prompt_lower for keyword in ["zpráv", "prohlášen", "novink", "sektor", "výsled", "trh"]):
+        news_summaries = []
+        # Projdeme hlavní tahouny z watchlistu a vytáhneme nejnovější titulky
+        focus_tickers = ["NVDA", "AAPL", "MSFT", "IBM", "TSMC", "GOOGL"]
+        for t in focus_tickers:
             try:
-                t_info = yf.Ticker(t).info
-                p = t_info.get("currentPrice") or t_info.get("regularMarketPrice", "N/A")
-                c = t_info.get("currency", "USD")
-                response_parts.append(f"**{t}**: aktuální cena je {p} {c}.")
+                t_obj = yf.Ticker(t)
+                news_list = t_obj.news
+                if news_list:
+                    latest = news_list[0]
+                    title = latest.get('title', 'Bez titulku')
+                    publisher = latest.get('publisher', 'Zdroj neuveden')
+                    news_summaries.append(f"- **{t}** ({publisher}): {title}")
             except Exception:
-                response_parts.append(f"**{t}**: data se nepodařilo načíst.")
-        ai_response = f"Analýza pro vyžádané tituly z vašeho dotazu:\n" + "\n".join(response_parts)
+                pass
+        
+        if news_summaries:
+            ai_response = (
+                "🌐 **Market Intelligence & Tech Sector Overview:**\n\n"
+                "Sleduji aktuální prohlášení a zprávy napříč klíčovými technologickými tituly s potenciálem vlivu na ceny:\n\n" +
+                "\n".join(news_summaries) + "\n\n"
+                "💡 *Analytický pohled:* Trh nadále pozorně sleduje korporátní výnosy, investice do infrastruktury umělé inteligence a vývoj úrokových sazeb, které určují sentiment na růstových titulech."
+            )
+        else:
+            ai_response = "Aktuálně se nepodařilo načíst čerstvé tiskové zprávy z trhu."
     else:
-        ai_response = f"Zaznamenal jsem váš dotaz: *'{prompt}'*. Prohledal jsem aktivní watchlist ({', '.join(watchlist[:5])}...). Zeptejte se na konkrétní ticker z vašeho přehledu pro detailní pohled."
+        # Cílený dotaz na konkrétní firmu z watchlistu
+        found_tickers = [t for t in watchlist if t.lower() in prompt_lower]
+        if found_tickers:
+            response_parts = []
+            for t in found_tickers:
+                try:
+                    t_obj = yf.Ticker(t)
+                    t_info = t_obj.info
+                    p = t_info.get("currentPrice") or t_info.get("regularMarketPrice", "N/A")
+                    c = t_info.get("currency", "USD")
+                    
+                    # Zkusíme přidat i nejnovější titulek zpráv pro danou firmu
+                    news_title = ""
+                    if t_obj.news:
+                        news_title = f" (Poslední zpráva: {t_obj.news[0].get('title', '')})"
+                    
+                    response_parts.append(f"**{t}**: aktuální cena {p} {c}.{news_title}")
+                except Exception:
+                    response_parts.append(f"**{t}**: data se nepodařilo načíst.")
+            ai_response = f"📋 **Rychlý přehled pro vyžádané tituly:**\n\n" + "\n".join(response_parts)
+        else:
+            ai_response = f"Zaznamenal jsem váš dotaz: *'{prompt}'*. Pro komplexní přehled zkuste položit dotaz na novinky v tech sektoru, výsledky nebo zmínit konkrétní ticker."
 
-    # Uložení odpovědi asistenta do historie
     with st.chat_message("assistant"):
         st.markdown(ai_response)
         
