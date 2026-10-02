@@ -236,7 +236,8 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
     active_key = st.session_state.get("gemini_api_key", "")
 
     if active_key:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={active_key}"
+        # Aktualizováno na doporučený model gemini-3.8-flash podle chybové hlášky
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={active_key}"
         
         current_date_str = datetime.now().strftime("%d. %m. %Y")
         
@@ -275,7 +276,7 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
                     continue
                 ai_response = "⚠️ Požadavek vypršel (Timeout). Síť neodpověděla včas."
             except Exception as e:
-                ai_response = f"⚠️ Chyba připojení: {str(e)}"
+                ai_response = f"⚠️️ Chyba připojení: {str(e)}"
                 break
 
     if not ai_response:
