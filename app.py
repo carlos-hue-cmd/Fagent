@@ -3,8 +3,9 @@ import yfinance as yf
 import pandas as pd
 import plotly.express as px
 import feedparser
+import json
 
-# --- 1. KONFIGURACE STRÁNKY (MUSÍ BÝT ÚPLNĚ PRVNÍ STREAMLIT PŘÍKAZ) ---
+# --- 1. KONFIGURACE STRÁNKY ---
 st.set_page_config(
     page_title="Hybrid Market Pattern Agent", 
     page_icon="📈", 
@@ -53,20 +54,33 @@ def fetch_global_tech_news():
             continue
     return all_articles
 
-# --- 4. SEKCE: RYCHLÝ PŘEHLED SEKTORU ---
+# --- 4. SEKCE: RYCHLÝ PŘEHLED SEKTORU & SPRÁVA WATCHLISTU ---
 st.subheader("⚡ Watchlist & Rychlý přehled sektoru")
 
-with st.expander("➕ Přidat novou firmu do mřížky"):
-    with st.form("add_ticker_form", clear_on_submit=True):
-        new_ticker = st.text_input("Zadej Ticker (např. NFLX, COIN):").upper().strip()
-        submit_add = st.form_submit_button("Přidat do přehledu")
-        if submit_add and new_ticker:
-            if new_ticker not in st.session_state["watchlist"]:
-                st.session_state["watchlist"].append(new_ticker)
-                st.success(f"Ticker {new_ticker} byl přidán!")
-                st.rerun()
-            else:
-                st.warning(f"Ticker {new_ticker} už v seznamu je.")
+with st.expander("➕ Přidat nebo ❌ odebrat firmu z přehledu"):
+    col_add, col_rem = st.columns(2)
+    
+    with col_add:
+        with st.form("add_ticker_form", clear_on_submit=True):
+            new_ticker = st.text_input("Přidat Ticker (např. NFLX):").upper().strip()
+            submit_add = st.form_submit_button("Přidat")
+            if submit_add and new_ticker:
+                if new_ticker not in st.session_state["watchlist"]:
+                    st.session_state["watchlist"].append(new_ticker)
+                    st.success(f"Ticker {new_ticker} přidán!")
+                    st.rerun()
+                else:
+                    st.warning(f"Ticker {new_ticker} již existuje.")
+
+    with col_rem:
+        with st.form("remove_ticker_form", clear_on_submit=True):
+            ticker_to_remove = st.selectbox("Odebrat Ticker:", ["-- Vyber --"] + st.session_state["watchlist"])
+            submit_rem = st.form_submit_button("Odebrat vybraný")
+            if submit_rem and ticker_to_remove != "-- Vyber --":
+                if ticker_to_remove in st.session_state["watchlist"]:
+                    st.session_state["watchlist"].remove(ticker_to_remove)
+                    st.success(f"Ticker {ticker_to_remove} odebrán!")
+                    st.rerun()
 
 watchlist = st.session_state["watchlist"]
 
@@ -106,13 +120,14 @@ for i in range(0, len(watchlist), cols_per_row):
             else:
                 bg_color, border_color, text_color, sign = "rgba(248, 81, 73, 0.12)", "#f85149", "#f85149", ""
 
+            # Zmenšená výška karet (kompaktnější padding a menší písma)
             card_html = f"""
-            <div style="background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                <h4 style="margin: 0; color: inherit;">{ticker}</h4>
-                <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.8;">{price_str}</p>
-                <h3 style="margin: 4px 0 0 0; color: {text_color}; font-size: 18px;">
-                    {sign}{change_pct:.2f}%
-                </h3>
+            <div style="background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 6px; padding: 6px 10px; text-align: center; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: bold; font-size: 14px; margin: 0;">{ticker}</span>
+                    <span style="color: {text_color}; font-weight: bold; font-size: 13px; margin: 0;">{sign}{change_pct:.2f}%</span>
+                </div>
+                <div style="font-size: 11px; opacity: 0.75; text-align: left; margin-top: 2px;">{price_str}</div>
             </div>
             """
             st.markdown(card_html, unsafe_allow_html=True)
@@ -121,14 +136,17 @@ st.divider()
 
 # --- 5. SEKCE: DETAILNÍ HISTORICKÝ GRAF ---
 st.subheader("📊 Detailní historický graf vybraného titulu")
-default_index = watchlist.index("NVDA") if "NVDA" in watchlist else 0
-selected_detail_ticker = st.selectbox("Zvol firmu pro detailní zobrazení grafu:", watchlist, index=default_index)
+default_index = watchlist.index("NVDA") if "NVDA" in watchlist else (0 if watchlist else None)
+if default_index is not None and watchlist:
+    selected_detail_ticker = st.selectbox("Zvol firmu pro detailní zobrazení grafu:", watchlist, index=default_index)
 
-if selected_detail_ticker:
-    detail_hist = yf.Ticker(selected_detail_ticker).history(period="max")
-    if not detail_hist.empty:
-        fig = px.line(detail_hist, x=detail_hist.index, y='Close', title=f"Vývoj ceny: {selected_detail_ticker}")
-        st.plotly_chart(fig, use_container_width=True)
+    if selected_detail_ticker:
+        detail_hist = yf.Ticker(selected_detail_ticker).history(period="max")
+        if not detail_hist.empty:
+            fig = px.line(detail_hist, x=detail_hist.index, y='Close', title=f"Vývoj ceny: {selected_detail_ticker}")
+            st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Watchlist je prázdný. Přidejte nějakou firmu nahoře v rozbalovacím menu.")
 
 st.divider()
 
@@ -165,7 +183,7 @@ if prompt := st.chat_input("Zeptej se na výtah zpráv, asijské trhy, Seeking A
                 "💡 *Chceš některý z těchto bodů rozebrat do hloubky ve vazbě na konkrétní firmu z tvého watchlistu?*"
             )
         else:
-            ai_response = "⚠️ Externí RSS feedy aktuálně neodpovídají. Zkus dotaz za chvíli zopakovat."
+            ai_response = "⚠️️ Externí RSS feedy aktuálně neodpovídají. Zkus dotaz za chvíli zopakovat."
     else:
         found_tickers = [t for t in watchlist if t.lower() in prompt_lower]
         if found_tickers:
@@ -189,14 +207,14 @@ if prompt := st.chat_input("Zeptej se na výtah zpráv, asijské trhy, Seeking A
     st.session_state.messages.append({"role": "assistant", "content": ai_response})
     st.rerun()
 
-# Tlačítko pro kopírování poslední odpovědi
+# --- 7. BEZPEČNÉ TLAČÍTKO PRO KOPÍROVÁNÍ ---
 if st.session_state.messages:
     last_assistant_msg = next((m["content"] for m in reversed(st.session_state.messages) if m["role"] == "assistant"), None)
     if last_assistant_msg:
         st.markdown("---")
-        safe_text = last_assistant_msg.replace("`", "\\`").replace('"', '\\"')
+        safe_json = json.dumps(last_assistant_msg)
         copy_button_html = f"""
-        <button onclick="navigator.clipboard.writeText(`{safe_text}`); alert('Zkopírováno do schránky!');" 
+        <button onclick="navigator.clipboard.writeText({safe_json}); alert('Zkopírováno do schránky!');" 
                 style="background-color: #ff4b4b; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">
             📋 Kopírovat poslední odpověď agenta
         </button>
