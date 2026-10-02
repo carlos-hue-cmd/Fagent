@@ -19,10 +19,22 @@ st.set_page_config(
 )
 
 st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
-st.markdown("Univerzální tržní agent s multi-source přehledem zpráv a inteligentním modulem.")
+st.markdown("Univerzální tržní agent s fixním přehledem sektorových pozic a AI uvažováním.")
 
-# --- 2. SIDEBAR PRO NASTAVENÍ API KLÍČE ---
-st.sidebar.header("⚙️ Konfigurace agenta")
+# --- 2. INICIALIZACE WATCHLISTU (FIXNÍ POZICE) ---
+if "watchlist" not in st.session_state:
+    st.session_state["watchlist"] = [
+        "IBM", "TSMC", "AAPL", "MSFT", 
+        "NVDA", "QUBT", "SMCI", "AMD", 
+        "GOOGL", "AMZN", "META", "INTC", 
+        "QCOM", "AVGO", "ASML", "ARM"
+    ]
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# --- 3. SIDEBAR PRO NASTAVENÍ A PŘEPSÁNÍ POZIC ---
+st.sidebar.header("⚙️ Konfigurace & Správa pozic")
 api_key_input = st.sidebar.text_input("Zadej Gemini API klíč:", type="password", help="Získej zdarma na aistudio.google.com")
 
 if api_key_input:
@@ -32,17 +44,21 @@ else:
     if "gemini_api_key" not in st.session_state:
         st.session_state["gemini_api_key"] = ""
 
-# --- 3. INICIALIZACE HISTORIE A WATCHLISTU ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+st.sidebar.divider()
+st.sidebar.subheader("🔄 Úprava pozic ve mřížce")
+st.sidebar.markdown("Zvol pozici, kterou chceš přepsat jinou firmou:")
 
-if "watchlist" not in st.session_state:
-    st.session_state["watchlist"] = [
-        "IBM", "TSMC", "AAPL", "MSFT", 
-        "NVDA", "QUBT", "SMCI", "AMD", 
-        "GOOGL", "AMZN", "META", "INTC", 
-        "QCOM", "AVGO", "ASML", "ARM"
-    ]
+with st.sidebar.form("replace_ticker_form"):
+    target_pos = st.selectbox("Vyber pozici k přepsání:", st.session_state["watchlist"])
+    new_replacement = st.text_input("Napsat nový Ticker (např. NFLX):").upper().strip()
+    submit_replace = st.form_submit_button("Zaměnit firmu")
+    
+    if submit_replace and new_replacement:
+        if target_pos in st.session_state["watchlist"]:
+            idx = st.session_state["watchlist"].index(target_pos)
+            st.session_state["watchlist"][idx] = new_replacement
+            st.sidebar.success(f"Pozice {target_pos} úspěšně přepsána na {new_replacement}!")
+            st.rerun()
 
 # --- 4. FUNKCE PRO STAŽENÍ ŽIVÝCH ZPRÁV ---
 def fetch_global_tech_news():
@@ -67,36 +83,12 @@ def fetch_global_tech_news():
             continue
     return all_articles
 
-# --- 5. SEKCE: RYCHLÝ PŘEHLED SEKTORU & WATCHLIST ---
-st.subheader("⚡ Watchlist & Rychlý přehled sektoru")
-
-with st.expander("➕ Přidat nebo ❌ odebrat firmu z přehledu"):
-    col_add, col_rem = st.columns(2)
-    with col_add:
-        with st.form("add_ticker_form", clear_on_submit=True):
-            new_ticker = st.text_input("Přidat Ticker (např. NFLX):").upper().strip()
-            submit_add = st.form_submit_button("Přidat")
-            if submit_add and new_ticker:
-                if new_ticker not in st.session_state["watchlist"]:
-                    st.session_state["watchlist"].append(new_ticker)
-                    st.success(f"Ticker {new_ticker} přidán!")
-                    st.rerun()
-                else:
-                    st.warning(f"Ticker {new_ticker} již existuje.")
-
-    with col_rem:
-        with st.form("remove_ticker_form", clear_on_submit=True):
-            ticker_to_remove = st.selectbox("Odebrat Ticker:", ["-- Vyber --"] + st.session_state["watchlist"])
-            submit_rem = st.form_submit_button("Odebrat vybraný")
-            if submit_rem and ticker_to_remove != "-- Vyber --":
-                if ticker_to_remove in st.session_state["watchlist"]:
-                    st.session_state["watchlist"].remove(ticker_to_remove)
-                    st.success(f"Ticker {ticker_to_remove} odebrán!")
-                    st.rerun()
+# --- 5. SEKCE: RYCHLÝ PŘEHLED SEKTORU (FIXNÍ MŘÍŽKA) ---
+st.subheader("⚡ Watchlist & Rychlý přehled sektoru (Fixní mřížka)")
 
 watchlist = st.session_state["watchlist"]
-
 cols_per_row = 4
+
 for i in range(0, len(watchlist), cols_per_row):
     row_tickers = watchlist[i:i + cols_per_row]
     cols = st.columns(cols_per_row)
@@ -128,7 +120,6 @@ for i in range(0, len(watchlist), cols_per_row):
             price_str = f"{current_price:.2f} {currency}" if isinstance(current_price, (int, float)) else "N/A"
             
             if change_pct >= 0:
-            # Oprava: odstraněn přebytečný tag v řetězci
                 bg_color, border_color, text_color, sign = "rgba(46, 160, 67, 0.12)", "#2ea043", "#3fb950", "+"
             else:
                 bg_color, border_color, text_color, sign = "rgba(248, 81, 73, 0.12)", "#f85149", "#f85149", ""
@@ -175,13 +166,12 @@ if prompt := st.chat_input("Zeptej se na odhady zisků, asijské trhy, polovodi�
     ai_response = None
     active_key = st.session_state.get("gemini_api_key", "")
 
-    # Pokud je k dispozici knihovna a API klíč od uživatele, zapojíme Gemini
     if GENAI_AVAILABLE and active_key:
         try:
             client = genai.Client(api_key=active_key)
             system_instruction = (
                 f"Jsi špičkový finanční a tržní agent zaměřený na US a Asijské trhy, polovodiče, čipy a paměti (TSMC, SK Hynix, NVDA atd.). "
-                f"Uživatel má ve svém watchlistu tyto firmy: {watchlist}. "
+                f"Uživatel má ve svém fixním přehledu tyto firmy: {watchlist}. "
                 "Odpovídej analyticky, s hlubokou znalostí tržních cyklů, odhadů zisků a makroekonomických souvislostí v češtině."
             )
             response = client.models.generate_content(
@@ -196,7 +186,6 @@ if prompt := st.chat_input("Zeptej se na odhady zisků, asijské trhy, polovodi�
         except Exception as e:
             ai_response = f"⚠️ Chyba při volání Gemini API: {str(e)}"
 
-    # Pokud klíč nebyl zadaný, použijeme chytrou analytickou logiku
     if not ai_response:
         prompt_lower = prompt.lower()
         if any(w in prompt_lower for w in ["odhad", "zisk", "polovodič", "paměť", "memory", "hynix", "samsung", "tsmc", "cyklus"]):
@@ -205,7 +194,7 @@ if prompt := st.chat_input("Zeptej se na odhady zisků, asijské trhy, polovodi�
                 "1. **Struktura poptávky:** Trh zažívá silnou disproporci. Běžná spotřební elektronika stagnuje, zatímco **AI infrastruktura a HBM (High Bandwidth Memory)** generují historicky nejvyšší marže.\n"
                 "2. **TSMC a pokročilý fab segment:** Odhady zisků pro nejbližší kvartály zůstávají revidované směrem nahoru díky plnému využití 3nm uzlů a pokročilého balípení (CoWoS).\n"
                 "3. **Paměťoví hráči (SK Hynix, Samsung, Micron):** Ceny DRAM a NAND pamětí se stabilizovaly na vyšších úrovních.\n\n"
-                "💡 *Tip: V levém bočním panelu (sidebaru) můžeš zadat svůj **Gemini API klíč** a agent se rázem přepne na plný výkon živé AI s pokročilým uvažováním!*"
+                "💡 *Tip: V levém bočním panelu můžeš zadat svůj **Gemini API klíč** pro plné zapojení živé AI logiky!*"
             )
         elif any(w in prompt_lower for w in ["zpráv", "výtah", "shrnutí", "novink", "trh", "pre-market"]):
             news_items = fetch_global_tech_news()
@@ -231,8 +220,7 @@ if prompt := st.chat_input("Zeptej se na odhady zisků, asijské trhy, polovodi�
             else:
                 ai_response = (
                     f"Zaznamenal jsem tvůj dotaz: *'{prompt}'*.\n\n"
-                    "Pro plné zapojení AI logiky zadej svůj **Gemini API klíč** vlevo v postranním panelu. "
-                    "Jinak se spoléhám na vestavěný analytický přehled pro čipy, asijské trhy a odhady zisků."
+                    "Pro plné zapojení AI logiky zadej svůj **Gemini API klíč** vlevo v postranním panelu."
                 )
 
     with st.chat_message("assistant"):
