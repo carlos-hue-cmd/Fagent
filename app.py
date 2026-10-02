@@ -164,10 +164,10 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
     ai_response = None
     active_key = st.session_state.get("gemini_api_key", "")
 
-    # Přímé volání Gemini přes HTTP API (funguje všude bez pip install)
+    # Přímé volání správného modelu gemini-2.5-flash
     if active_key:
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={active_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={active_key}"
             
             system_prompt = (
                 f"Jsi špičkový finanční a tržní agent pro US a Asijské trhy, polovodiče a paměti. "
