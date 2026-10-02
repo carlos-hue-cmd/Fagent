@@ -10,8 +10,8 @@ import time
 from datetime import datetime
 
 # --- SOUBORY PRO TRVALÉ ULOŽENÍ ---
-CONFIG_FILE = "api_key_config.json"
-HISTORY_FILE = "chat_history.json"
+CONFIG_FILE = "mistral_api_key_config.json"
+HISTORY_FILE = "chat_history_mistral.json"
 
 def load_saved_key():
     if os.path.exists(CONFIG_FILE):
@@ -47,8 +47,8 @@ def save_history_to_disk(messages):
 
 # --- 1. KONFIGURACE STRÁNKY & VLASTNÍ CSS PRO ZVĚTŠENÍ ČATU A PÍSMA ---
 st.set_page_config(
-    page_title="Hybrid Market Pattern Agent", 
-    page_icon="📈", 
+    page_title="Hybrid Market Pattern Agent (Mistral)", 
+    page_icon="🤖", 
     layout="wide"
 )
 
@@ -67,8 +67,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
-st.markdown("Univerzální tržní agent s fixním přehledem sektorových pozic a přímou Gemini AI.")
+st.title("📈 Hybridní Agent: US & Asia Market Intelligence (Mistral AI)")
+st.markdown("Univerzální tržní agent s fixním přehledem sektorových pozic poháněný modely od Mistral AI.")
 
 # --- 2. INICIALIZACE WATCHLISTU, KLÍČE A HISTORIE ---
 if "watchlist" not in st.session_state:
@@ -83,26 +83,26 @@ if "watchlist" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = load_saved_history()
 
-if "gemini_api_key" not in st.session_state:
-    st.session_state["gemini_api_key"] = load_saved_key()
+if "mistral_api_key" not in st.session_state:
+    st.session_state["mistral_api_key"] = load_saved_key()
 
 # --- 3. SIDEBAR PRO NASTAVENÍ A PŘEPSÁNÍ POZIC ---
 st.sidebar.header("⚙️ Konfigurace & Správa pozic")
 
 user_key = st.sidebar.text_input(
-    "Zadej Gemini API klíč:", 
+    "Zadej Mistral API klíč:", 
     type="password", 
-    value=st.session_state["gemini_api_key"], 
-    key="input_gemini_key",
-    help="Získej zdarma na aistudio.google.com"
+    value=st.session_state["mistral_api_key"], 
+    key="input_mistral_key",
+    help="Získej na console.mistral.ai"
 )
 
-if user_key != st.session_state["gemini_api_key"]:
-    st.session_state["gemini_api_key"] = user_key
+if user_key != st.session_state["mistral_api_key"]:
+    st.session_state["mistral_api_key"] = user_key
     save_key_to_disk(user_key)
 
-if st.session_state["gemini_api_key"]:
-    st.sidebar.success("Gemini API klíč aktivován a uložen! 🚀")
+if st.session_state["mistral_api_key"]:
+    st.sidebar.success("Mistral API klíč aktivován a uložen! 🚀")
 else:
     st.sidebar.warning("API klíč není zadaný. Agent běží v záložním režimu.")
 
@@ -127,30 +127,7 @@ with st.sidebar.form("replace_ticker_form"):
             st.sidebar.success(f"Pozice {target_pos} úspěšně přepsána na {new_replacement}!")
             st.rerun()
 
-# --- 4. FUNKCE PRO STAŽENÍ ŽIVÝCH ZPRÁV ---
-def fetch_global_tech_news():
-    feeds = {
-        "Nikkei Asia": "https://asia.nikkei.com/rss/feed/nar",
-        "Seeking Alpha": "https://seekingalpha.com/market_currents.xml",
-        "CNBC Markets": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
-        "Reuters Tech": "https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best",
-        "MarketWatch": "https://www.marketwatch.com/rss/topstories"
-    }
-    all_articles = []
-    for source_name, url in feeds.items():
-        try:
-            parsed_feed = feedparser.parse(url)
-            for entry in parsed_feed.entries[:3]:
-                all_articles.append({
-                    "source": source_name,
-                    "title": entry.get("title", "Bez titulku"),
-                    "link": entry.get("link", "#")
-                })
-        except Exception:
-            continue
-    return all_articles
-
-# --- 5. SEKCE: RYCHLÝ PŘEHLED SEKTORU (FIXNÍ MŘÍŽKA) ---
+# --- 4. SEKCE: RYCHLÝ PŘEHLED SEKTORU (FIXNÍ MŘÍŽKA) ---
 st.subheader("⚡ Watchlist & Rychlý přehled sektoru (Fixní mřížka)")
 
 watchlist = st.session_state["watchlist"]
@@ -204,7 +181,7 @@ for i in range(0, len(watchlist), cols_per_row):
 
 st.divider()
 
-# --- 6. SEKCE: DETAILNÍ HISTORICKÝ GRAF ---
+# --- 5. SEKCE: DETAILNÍ HISTORICKÝ GRAF ---
 st.subheader("📊 Detailní historický graf vybraného titulu")
 default_index = watchlist.index("NVDA") if "NVDA" in watchlist else (0 if watchlist else None)
 if default_index is not None and watchlist:
@@ -218,8 +195,8 @@ if default_index is not None and watchlist:
 
 st.divider()
 
-# --- 7. SEKCE: INTELIGENTNÍ CHAT S PŘÍMÝM GEMINI API ---
-st.subheader("💬 AI Finanční Agent (Logika & Uvažování)")
+# --- 6. SEKCE: INTELIGENTNÍ CHAT S MISTRAL API ---
+st.subheader("💬 AI Finanční Agent (Mistral API)")
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -233,11 +210,10 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
         st.markdown(prompt)
 
     ai_response = None
-    active_key = st.session_state.get("gemini_api_key", "")
+    active_key = st.session_state.get("mistral_api_key", "")
 
     if active_key:
-        # Aktualizováno na doporučený model gemini-3.8-flash podle chybové hlášky
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={active_key}"
+        url = "https://api.mistral.ai/v1/chat/completions"
         
         current_date_str = datetime.now().strftime("%d. %m. %Y")
         
@@ -249,35 +225,26 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
         )
         
         payload = {
-            "contents": [
-                {"parts": [{"text": f"{system_prompt}\n\nDotaz uživatele: {prompt}"}]}
+            "model": "mistral-small-latest",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
             ]
         }
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {active_key}"
+        }
         
-        for attempt in range(2):
-            try:
-                res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
-                
-                if res.status_code == 200:
-                    data = res.json()
-                    ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
-                    break
-                elif res.status_code == 503 and attempt == 0:
-                    time.sleep(2)
-                    continue
-                elif res.status_code == 503:
-                    ai_response = "⚠️ **Servery Gemini jsou momentálně přetížené (Chyba 503).** Zkuste to prosím za chvíli zopakovat."
-                else:
-                    ai_response = f"⚠️ Chyba API (kód {res.status_code}): {res.text}"
-                    break
-            except requests.exceptions.Timeout:
-                if attempt == 0:
-                    continue
-                ai_response = "⚠️ Požadavek vypršel (Timeout). Síť neodpověděla včas."
-            except Exception as e:
-                ai_response = f"⚠️️ Chyba připojení: {str(e)}"
-                break
+        try:
+            res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
+            if res.status_code == 200:
+                data = res.json()
+                ai_response = data["choices"][0]["message"]["content"]
+            else:
+                ai_response = f"⚠️ Chyba Mistral API (kód {res.status_code}): {res.text}"
+        except Exception as e:
+            ai_response = f"⚠️ Chyba připojení k Mistralu: {str(e)}"
 
     if not ai_response:
         prompt_lower = prompt.lower()
@@ -286,12 +253,12 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
                 "📅 **Harmonogram výsledkové sezóny pro technologický sektor (říjen/listopad 2026):**\n\n"
                 "1. **US Big Tech & Polovodiče:** Výsledková sezóna za 3. čtvrtletí startuje v polovině října a naplno běží koncem října a v listopadu (Alphabet, Meta, Microsoft, Apple, AMD, Nvidia).\n"
                 "2. **Asijský dodavatelský řetězec (TSMC, SK Hynix):** TSMC obvykle publikuje výsledky v polovině října (cca 15.–20. v měsíci).\n\n"
-                "💡 *Zadej svůj Gemini API klíč v postranním panelu pro živou AI analýzu.*"
+                "💡 *Zadej svůj Mistral API klíč v postranním panelu pro živou AI analýzu.*"
             )
         else:
             ai_response = (
                 f"Zaznamenal jsem dotaz: *'{prompt}'*.\n\n"
-                "Pro plnohodnotné odpovědi ověř v levém panelu svůj Gemini API klíč."
+                "Pro plnohodnotné odpovědi ověř v levém panelu svůj Mistral API klíč."
             )
 
     with st.chat_message("assistant"):
