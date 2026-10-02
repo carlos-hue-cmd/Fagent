@@ -3,7 +3,6 @@ import yfinance as yf
 import pandas as pd
 import plotly.express as px
 import feedparser
-import json
 
 # --- 1. KONFIGURACE STRÁNKY ---
 st.set_page_config(
@@ -120,14 +119,14 @@ for i in range(0, len(watchlist), cols_per_row):
             else:
                 bg_color, border_color, text_color, sign = "rgba(248, 81, 73, 0.12)", "#f85149", "#f85149", ""
 
-            # Zmenšená výška karet (kompaktnější padding a menší písma)
+            # Úprava karet: Cena uprostřed a výraznějším písmem, kompaktní výška
             card_html = f"""
-            <div style="background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 6px; padding: 6px 10px; text-align: center; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-weight: bold; font-size: 14px; margin: 0;">{ticker}</span>
-                    <span style="color: {text_color}; font-weight: bold; font-size: 13px; margin: 0;">{sign}{change_pct:.2f}%</span>
+            <div style="background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 6px; padding: 8px 10px; text-align: center; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <span style="font-weight: bold; font-size: 13px;">{ticker}</span>
+                    <span style="color: {text_color}; font-weight: bold; font-size: 12px;">{sign}{change_pct:.2f}%</span>
                 </div>
-                <div style="font-size: 11px; opacity: 0.75; text-align: left; margin-top: 2px;">{price_str}</div>
+                <div style="font-size: 15px; font-weight: bold; margin-top: 2px;">{price_str}</div>
             </div>
             """
             st.markdown(card_html, unsafe_allow_html=True)
@@ -183,7 +182,7 @@ if prompt := st.chat_input("Zeptej se na výtah zpráv, asijské trhy, Seeking A
                 "💡 *Chceš některý z těchto bodů rozebrat do hloubky ve vazbě na konkrétní firmu z tvého watchlistu?*"
             )
         else:
-            ai_response = "⚠️️ Externí RSS feedy aktuálně neodpovídají. Zkus dotaz za chvíli zopakovat."
+            ai_response = "⚠️ Externí RSS feedy aktuálně neodpovídají. Zkus dotaz za chvíli zopakovat."
     else:
         found_tickers = [t for t in watchlist if t.lower() in prompt_lower]
         if found_tickers:
@@ -206,17 +205,3 @@ if prompt := st.chat_input("Zeptej se na výtah zpráv, asijské trhy, Seeking A
         
     st.session_state.messages.append({"role": "assistant", "content": ai_response})
     st.rerun()
-
-# --- 7. BEZPEČNÉ TLAČÍTKO PRO KOPÍROVÁNÍ ---
-if st.session_state.messages:
-    last_assistant_msg = next((m["content"] for m in reversed(st.session_state.messages) if m["role"] == "assistant"), None)
-    if last_assistant_msg:
-        st.markdown("---")
-        safe_json = json.dumps(last_assistant_msg)
-        copy_button_html = f"""
-        <button onclick="navigator.clipboard.writeText({safe_json}); alert('Zkopírováno do schránky!');" 
-                style="background-color: #ff4b4b; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">
-            📋 Kopírovat poslední odpověď agenta
-        </button>
-        """
-        st.markdown(copy_button_html, unsafe_allow_html=True)
