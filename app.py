@@ -25,7 +25,7 @@ if "watchlist" not in st.session_state:
         "QCOM", "AVGO", "ASML", "ARM"
     ]
 
-# --- SEKCE 1: RYCHLÝ PŘEHLED SEKTORU (NATIVNÍ STREAMLIT MŘÍŽKA 4 SLOUPCE) ---
+# --- SEKCE 1: RYCHLÝ PŘEHLED SEKTORU ---
 st.subheader("⚡ Watchlist & Rychlý přehled sektoru")
 
 # Formulář pro přidání nové firmy
@@ -135,23 +135,45 @@ st.divider()
 # --- SEKCE 3: CHAT S ASISTENTEM A TLAČÍTKO KOPÍROVAT ---
 st.subheader("💬 AI Finanční Agent (Globální kontext & Live Data)")
 
+# Vykreslení celé historie chatu
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Zpracování nového vstupu od uživatele
 if prompt := st.chat_input("Zeptej se na trhy, akcie nebo anomálie..."):
+    # Uložení uživatelské zprávy do historie
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    ai_response = f"Zpracovávám požadavek k tématu: **{prompt}**. Sleduji aktuální data z yfinance pro váš watchlist."
+    # Generování chytřejší odpovědi na základě watchlistu a dotazu
+    # Zde můžeš napojit vlastní logiku nebo LLM volání, aktuálně reálně analyzuje dotaz
+    prompt_lower = prompt.lower()
+    found_tickers = [t for t in watchlist if t.lower() in prompt_lower]
     
+    if found_tickers:
+        response_parts = []
+        for t in found_tickers:
+            try:
+                t_info = yf.Ticker(t).info
+                p = t_info.get("currentPrice") or t_info.get("regularMarketPrice", "N/A")
+                c = t_info.get("currency", "USD")
+                response_parts.append(f"**{t}**: aktuální cena je {p} {c}.")
+            except Exception:
+                response_parts.append(f"**{t}**: data se nepodařilo načíst.")
+        ai_response = f"Analýza pro vyžádané tituly z vašeho dotazu:\n" + "\n".join(response_parts)
+    else:
+        ai_response = f"Zaznamenal jsem váš dotaz: *'{prompt}'*. Prohledal jsem aktivní watchlist ({', '.join(watchlist[:5])}...). Zeptejte se na konkrétní ticker z vašeho přehledu pro detailní pohled."
+
+    # Uložení odpovědi asistenta do historie
     with st.chat_message("assistant"):
         st.markdown(ai_response)
         
     st.session_state.messages.append({"role": "assistant", "content": ai_response})
     st.rerun()
 
+# Tlačítko pro kopírování poslední odpovědi
 if st.session_state.messages:
     last_assistant_msg = next((m["content"] for m in reversed(st.session_state.messages) if m["role"] == "assistant"), None)
     if last_assistant_msg:
