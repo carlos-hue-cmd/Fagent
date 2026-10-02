@@ -34,10 +34,17 @@ if "gemini_api_key" not in st.session_state:
 # --- 3. SIDEBAR PRO NASTAVENÍ A PŘEPSÁNÍ POZIC ---
 st.sidebar.header("⚙️ Konfigurace & Správa pozic")
 
-user_key = st.sidebar.text_input("Zadej Gemini API klíč:", type="password", value=st.session_state["gemini_api_key"], help="Získej zdarma na aistudio.google.com")
+# Použití 'key' zajistí, že se hodnota v inputu neztratí při přepnutí obrazovki / překreslení
+user_key = st.sidebar.text_input(
+    "Zadej Gemini API klíč:", 
+    type="password", 
+    value=st.session_state["gemini_api_key"], 
+    key="input_gemini_key",
+    help="Získej zdarma na aistudio.google.com"
+)
+
 if user_key != st.session_state["gemini_api_key"]:
     st.session_state["gemini_api_key"] = user_key
-    st.rerun()
 
 if st.session_state["gemini_api_key"]:
     st.sidebar.success("Gemini API klíč aktivován! 🚀")
@@ -164,9 +171,9 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
     ai_response = None
     active_key = st.session_state.get("gemini_api_key", "")
 
-    # Přímé volání aktualizovaného modelu gemini-3.8-flash
     if active_key:
         try:
+            # Model gemini-3.8-flash s 30s timeoutem pro mobilní sítě
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={active_key}"
             
             system_prompt = (
@@ -182,17 +189,19 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
             }
             
             headers = {"Content-Type": "application/json"}
-            res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+            res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
             
             if res.status_code == 200:
                 data = res.json()
                 ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
             else:
                 ai_response = f"⚠️ Chyba API (kód {res.status_code}): {res.text}"
+        except requests.exceptions.Timeout:
+            ai_response = "⚠️ Požadavek vypršel (Timeout). Mobilní síť neodpověděla včas – zkuste to prosím znovu."
         except Exception as e:
             ai_response = f"⚠️ Chyba připojení: {str(e)}"
 
-    # Záložní logika, pokud klíč chybí
+    # Záložní logika, pokud klíč chybí nebo dojde k výpadku spojení
     if not ai_response:
         prompt_lower = prompt.lower()
         if any(w in prompt_lower for w in ["výsledk", "sezón", "termín", "říjen", "october", "datum"]):
@@ -200,12 +209,12 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
                 "📅 **Harmonogram výsledkové sezóny pro technologický sektor (říjen/listopad):**\n\n"
                 "1. **US Big Tech & Polovodiče:** Výsledková sezóna za 3. čtvrtletí startuje v polovině října a naplno běží koncem října a v listopadu (Alphabet, Meta, Microsoft, Apple, AMD, Nvidia).\n"
                 "2. **Asijský dodavatelský řetězec (TSMC, SK Hynix):** TSMC obvykle publikuje výsledky v polovině října (cca 15.–20. v měsíci).\n\n"
-                "💡 *Zadej svůj Gemini API klíč v postranním panelu a dotaz se rovnou zpracuje přes živou AI!*"
+                "💡 *Zadej svůj Gemini API klíč v postranním panelu pro živou AI analýzu.*"
             )
         else:
             ai_response = (
                 f"Zaznamenal jsem dotaz: *'{prompt}'*.\n\n"
-                "Pro plnohodnotné odpovědi zadej v levém panelu svůj Gemini API klíč."
+                "Pro plnohodnotné odpovědi ověř v levém panelu svůj Gemini API klíč."
             )
 
     with st.chat_message("assistant"):
