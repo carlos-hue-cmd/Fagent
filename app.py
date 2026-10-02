@@ -5,6 +5,28 @@ import plotly.express as px
 import feedparser
 import requests
 import json
+import os
+from datetime import datetime
+
+# --- SOUBOR PRO TRVALÉ ULOŽENÍ KLÍČE ---
+CONFIG_FILE = "api_key_config.json"
+
+def load_saved_key():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("api_key", "")
+        except Exception:
+            return ""
+    return ""
+
+def save_key_to_disk(key):
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump({"api_key": key}, f)
+    except Exception:
+        pass
 
 # --- 1. KONFIGURACE STRÁNKY ---
 st.set_page_config(
@@ -28,13 +50,13 @@ if "watchlist" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Načtení trvale uloženého klíče při startu
 if "gemini_api_key" not in st.session_state:
-    st.session_state["gemini_api_key"] = ""
+    st.session_state["gemini_api_key"] = load_saved_key()
 
 # --- 3. SIDEBAR PRO NASTAVENÍ A PŘEPSÁNÍ POZIC ---
 st.sidebar.header("⚙️ Konfigurace & Správa pozic")
 
-# Použití 'key' zajistí, že se hodnota v inputu neztratí při přepnutí obrazovki / překreslení
 user_key = st.sidebar.text_input(
     "Zadej Gemini API klíč:", 
     type="password", 
@@ -45,9 +67,10 @@ user_key = st.sidebar.text_input(
 
 if user_key != st.session_state["gemini_api_key"]:
     st.session_state["gemini_api_key"] = user_key
+    save_key_to_disk(user_key) # Uložení na disk při každé změně
 
 if st.session_state["gemini_api_key"]:
-    st.sidebar.success("Gemini API klíč aktivován! 🚀")
+    st.sidebar.success("Gemini API klíč aktivován a uložen! 🚀")
 else:
     st.sidebar.warning("API klíč není zadaný. Agent běží v záložním režimu.")
 
@@ -173,10 +196,13 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
 
     if active_key:
         try:
-            # Model gemini-3.8-flash s 30s timeoutem pro mobilní sítě
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={active_key}"
             
+            # Předání aktuálního data pro správnou orientaci v čase
+            current_date_str = datetime.now().strftime("%d. %m. %Y")
+            
             system_prompt = (
+                f"Aktuální datum dnes je: {current_date_str}. "
                 f"Jsi špičkový finanční a tržní agent pro US a Asijské trhy, polovodiče a paměti. "
                 f"Uživatel má ve svém watchlistu tyto firmy: {watchlist}. "
                 "Odpovídej analyticky, s hlubokou znalostí tržních cyklů, odhadů zisků a harmonogramů v češtině."
@@ -194,10 +220,13 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
             if res.status_code == 200:
                 data = res.json()
                 ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
+            elif res.status_code == 503:
+                ai_response = "⚠️ **Servery Gemini jsou momentálně přetížené (Chyba 503).** Jde o dočasný výpadek na straně Googlu. Zkuste prosím zprávu za chvíli odeslat znovu."
             else:
                 ai_response = f"⚠️ Chyba API (kód {res.status_code}): {res.text}"
+                
         except requests.exceptions.Timeout:
-            ai_response = "⚠️ Požadavek vypršel (Timeout). Mobilní síť neodpověděla včas – zkuste to prosím znovu."
+            ai_response = "⚠️ Požadavek vypršel (Timeout). Síť neodpověděla včas – zkuste to prosím znovu."
         except Exception as e:
             ai_response = f"⚠️ Chyba připojení: {str(e)}"
 
@@ -206,7 +235,7 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
         prompt_lower = prompt.lower()
         if any(w in prompt_lower for w in ["výsledk", "sezón", "termín", "říjen", "october", "datum"]):
             ai_response = (
-                "📅 **Harmonogram výsledkové sezóny pro technologický sektor (říjen/listopad):**\n\n"
+                "📅 **Harmonogram výsledkové sezóny pro technologický sektor (říjen/listopad 2026):**\n\n"
                 "1. **US Big Tech & Polovodiče:** Výsledková sezóna za 3. čtvrtletí startuje v polovině října a naplno běží koncem října a v listopadu (Alphabet, Meta, Microsoft, Apple, AMD, Nvidia).\n"
                 "2. **Asijský dodavatelský řetězec (TSMC, SK Hynix):** TSMC obvykle publikuje výsledky v polovině října (cca 15.–20. v měsíci).\n\n"
                 "💡 *Zadej svůj Gemini API klíč v postranním panelu pro živou AI analýzu.*"
