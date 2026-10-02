@@ -8,15 +8,15 @@ import json
 import os
 from datetime import datetime
 
-# --- SOUBOR PRO TRVALÉ ULOŽENÍ KLÍČE ---
+# --- SOUBORY PRO TRVALÉ ULOŽENÍ ---
 CONFIG_FILE = "api_key_config.json"
+HISTORY_FILE = "chat_history.json"
 
 def load_saved_key():
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data.get("api_key", "")
+                return json.load(f).get("api_key", "")
         except Exception:
             return ""
     return ""
@@ -28,17 +28,49 @@ def save_key_to_disk(key):
     except Exception:
         pass
 
-# --- 1. KONFIGURACE STRÁNKY ---
+def load_saved_history():
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_history_to_disk(messages):
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(messages, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+# --- 1. KONFIGURACE STRÁNKY & VLASTNÍ CSS PRO ZVĚTŠENÍ ČATU A PÍSMA ---
 st.set_page_config(
     page_title="Hybrid Market Pattern Agent", 
     page_icon="📈", 
     layout="wide"
 )
 
+# Vlastní styly pro zvětšení chatovacího okna a textu
+st.markdown("""
+<style>
+    /* Zvětšení písma a prostoru v chatových zprávách */
+    .stChatMessage {
+        font-size: 17px !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+    }
+    /* Zvětšení vstupního pole pro chat (promptu) */
+    .stChatInput textarea {
+        font-size: 16px !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
 st.markdown("Univerzální tržní agent s fixním přehledem sektorových pozic a přímou Gemini AI.")
 
-# --- 2. INICIALIZACE WATCHLISTU A KLÍČE ---
+# --- 2. INICIALIZACE WATCHLISTU, KLÍČE A HISTORIE ---
 if "watchlist" not in st.session_state:
     st.session_state["watchlist"] = [
         "IBM", "TSMC", "AAPL", "MSFT", 
@@ -47,10 +79,10 @@ if "watchlist" not in st.session_state:
         "QCOM", "AVGO", "ASML", "ARM"
     ]
 
+# Načtení trvale uložené historie chatu z disku
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = load_saved_history()
 
-# Načtení trvale uloženého klíče při startu
 if "gemini_api_key" not in st.session_state:
     st.session_state["gemini_api_key"] = load_saved_key()
 
@@ -67,12 +99,19 @@ user_key = st.sidebar.text_input(
 
 if user_key != st.session_state["gemini_api_key"]:
     st.session_state["gemini_api_key"] = user_key
-    save_key_to_disk(user_key) # Uložení na disk při každé změně
+    save_key_to_disk(user_key)
 
 if st.session_state["gemini_api_key"]:
     st.sidebar.success("Gemini API klíč aktivován a uložen! 🚀")
 else:
     st.sidebar.warning("API klíč není zadaný. Agent běží v záložním režimu.")
+
+# Tlačítko pro vymazání historie, kdyby bylo potřeba
+if st.sidebar.button("🗑️ Vymazat historii chatu"):
+    st.session_state.messages = []
+    if os.path.exists(HISTORY_FILE):
+        os.remove(HISTORY_FILE)
+    st.rerun()
 
 st.sidebar.divider()
 st.sidebar.subheader("🔄 Úprava pozic ve mřížce")
@@ -188,6 +227,8 @@ for message in st.session_state.messages:
 
 if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, asijské trhy..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
+    save_history_to_disk(st.session_state.messages) # Uložení po zadání dotazu
+    
     with st.chat_message("user"):
         st.markdown(prompt)
 
@@ -198,7 +239,6 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={active_key}"
             
-            # Předání aktuálního data pro správnou orientaci v čase
             current_date_str = datetime.now().strftime("%d. %m. %Y")
             
             system_prompt = (
@@ -230,7 +270,6 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
         except Exception as e:
             ai_response = f"⚠️ Chyba připojení: {str(e)}"
 
-    # Záložní logika, pokud klíč chybí nebo dojde k výpadku spojení
     if not ai_response:
         prompt_lower = prompt.lower()
         if any(w in prompt_lower for w in ["výsledk", "sezón", "termín", "říjen", "october", "datum"]):
@@ -250,4 +289,5 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
         st.markdown(ai_response)
         
     st.session_state.messages.append({"role": "assistant", "content": ai_response})
+    save_history_to_disk(st.session_state.messages) # Uložení odpovědi na disk
     st.rerun()
