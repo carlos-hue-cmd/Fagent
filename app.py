@@ -3,13 +3,8 @@ import yfinance as yf
 import pandas as pd
 import plotly.express as px
 import feedparser
-
-# Pokus o import nového Google GenAI SDK
-try:
-    from google import genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    GENAI_AVAILABLE = False
+import requests
+import json
 
 # --- 1. KONFIGURACE STRÁNKY ---
 st.set_page_config(
@@ -19,7 +14,7 @@ st.set_page_config(
 )
 
 st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
-st.markdown("Univerzální tržní agent s fixním přehledem sektorových pozic a živou Gemini AI.")
+st.markdown("Univerzální tržní agent s fixním přehledem sektorových pozic a přímou Gemini AI.")
 
 # --- 2. INICIALIZACE WATCHLISTU A KLÍČE ---
 if "watchlist" not in st.session_state:
@@ -39,7 +34,6 @@ if "gemini_api_key" not in st.session_state:
 # --- 3. SIDEBAR PRO NASTAVENÍ A PŘEPSÁNÍ POZIC ---
 st.sidebar.header("⚙️ Konfigurace & Správa pozic")
 
-# Použití value pro udržení hodnoty klíče v UI
 user_key = st.sidebar.text_input("Zadej Gemini API klíč:", type="password", value=st.session_state["gemini_api_key"], help="Získej zdarma na aistudio.google.com")
 if user_key != st.session_state["gemini_api_key"]:
     st.session_state["gemini_api_key"] = user_key
@@ -155,7 +149,7 @@ if default_index is not None and watchlist:
 
 st.divider()
 
-# --- 7. SEKCE: INTELIGENTNÍ CHAT S GEMINI / FALLBACKEM ---
+# --- 7. SEKCE: INTELIGENTNÍ CHAT S PŘÍMÝM GEMINI API ---
 st.subheader("💬 AI Finanční Agent (Logika & Uvažování)")
 
 for message in st.session_state.messages:
@@ -170,47 +164,48 @@ if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, as
     ai_response = None
     active_key = st.session_state.get("gemini_api_key", "")
 
-    # Správné volání nového Google GenAI SDK
-    if GENAI_AVAILABLE and active_key:
+    # Přímé volání Gemini přes HTTP API (funguje všude bez pip install)
+    if active_key:
         try:
-            client = genai.Client(api_key=active_key)
-            system_instruction = (
-                f"Jsi špičkový finanční a tržní agent zaměřený na US a Asijské trhy, polovodiče, čipy a paměti. "
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={active_key}"
+            
+            system_prompt = (
+                f"Jsi špičkový finanční a tržní agent pro US a Asijské trhy, polovodiče a paměti. "
                 f"Uživatel má ve svém watchlistu tyto firmy: {watchlist}. "
-                "Odpovídej analyticky, s hlubokou znalostí termínů výsledkových sezón, makroekonomických souvislostí a odhadů v češtině."
+                "Odpovídej analyticky, s hlubokou znalostí tržních cyklů, odhadů zisků a harmonogramů v češtině."
             )
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=prompt,
-                config={
-                    'system_instruction': system_instruction,
-                    'temperature': 0.3
-                }
-            )
-            ai_response = response.text
+            
+            payload = {
+                "contents": [
+                    {"parts": [{"text": f"{system_prompt}\n\nDotaz uživatele: {prompt}"}]}
+                ]
+            }
+            
+            headers = {"Content-Type": "application/json"}
+            res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+            
+            if res.status_code == 200:
+                data = res.json()
+                ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                ai_response = f"⚠️ Chyba API (kód {res.status_code}): {res.text}"
         except Exception as e:
-            ai_response = f"⚠️ Chyba při volání Gemini API: {str(e)}"
+            ai_response = f"⚠️ Chyba připojení: {str(e)}"
 
-    # Záložní logika, pokud klíč chybí nebo došlo k chybě
+    # Záložní logika, pokud klíč chybí
     if not ai_response:
         prompt_lower = prompt.lower()
         if any(w in prompt_lower for w in ["výsledk", "sezón", "termín", "říjen", "october", "datum"]):
             ai_response = (
                 "📅 **Harmonogram výsledkové sezóny pro technologický sektor (říjen/listopad):**\n\n"
-                "1. **US Big Tech & Polovodiče:** Výsledková sezóna za 3. čtvrtletí tradičně začíná v polovině října (banky) a naplno se rozbíhá koncem října a v listopadu (Big Tech jako Alphabet, Meta, Microsoft, Apple, a výrobci čipů jako AMD či Nvidia).\n"
-                "2. **Asijský dodavatelský řetězec (TSMC, SK Hynix, Samsung):** TSMC obvykle publikuje své kvartální výsledky a výhled jako první již v polovině října (cca kolem 15.–20. dne v měsíci), což udává tón celému globálnímu sektoru polovodičů.\n\n"
-                "💡 *Jakmile vlevo v panelu ověříš svůj Gemini API klíč, model ti dokáže vygenerovat přesný harmonogram pro konkrétní tituly z tvého watchlistu.*"
-            )
-        elif any(w in prompt_lower for w in ["odhad", "zisk", "polovodič", "paměť", "memory", "hynix", "samsung", "tsmc", "cyklus"]):
-            ai_response = (
-                "📊 **Analytický pohled: Odhady zisků v asijském polovodičovém sektoru & pamětech**\n\n"
-                "1. **Struktura poptávky:** Trh zažívá silnou disproporci. Běžná spotřební elektronika stagnuje, zatímco **AI infrastruktura a HBM** generují historicky nejvyšší marže.\n"
-                "2. **TSMC:** Odhady zisků zůstávají revidované směrem nahoru díky plnému využití 3nm uzlů a pokročilého balípení (CoWoS).\n"
+                "1. **US Big Tech & Polovodiče:** Výsledková sezóna za 3. čtvrtletí startuje v polovině října a naplno běží koncem října a v listopadu (Alphabet, Meta, Microsoft, Apple, AMD, Nvidia).\n"
+                "2. **Asijský dodavatelský řetězec (TSMC, SK Hynix):** TSMC obvykle publikuje výsledky v polovině října (cca 15.–20. v měsíci).\n\n"
+                "💡 *Zadej svůj Gemini API klíč v postranním panelu a dotaz se rovnou zpracuje přes živou AI!*"
             )
         else:
             ai_response = (
                 f"Zaznamenal jsem dotaz: *'{prompt}'*.\n\n"
-                "Zkontroluj prosím v levém bočním panelu, zda je Gemini API klíč správně zapsaný a aktivní."
+                "Pro plnohodnotné odpovědi zadej v levém panelu svůj Gemini API klíč."
             )
 
     with st.chat_message("assistant"):
