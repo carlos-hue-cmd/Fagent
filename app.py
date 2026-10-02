@@ -19,9 +19,9 @@ st.set_page_config(
 )
 
 st.title("📈 Hybridní Agent: US & Asia Market Intelligence")
-st.markdown("Univerzální tržní agent s fixním přehledem sektorových pozic a AI uvažováním.")
+st.markdown("Univerzální tržní agent s fixním přehledem sektorových pozic a živou Gemini AI.")
 
-# --- 2. INICIALIZACE WATCHLISTU (FIXNÍ POZICE) ---
+# --- 2. INICIALIZACE WATCHLISTU A KLÍČE ---
 if "watchlist" not in st.session_state:
     st.session_state["watchlist"] = [
         "IBM", "TSMC", "AAPL", "MSFT", 
@@ -33,21 +33,25 @@ if "watchlist" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "gemini_api_key" not in st.session_state:
+    st.session_state["gemini_api_key"] = ""
+
 # --- 3. SIDEBAR PRO NASTAVENÍ A PŘEPSÁNÍ POZIC ---
 st.sidebar.header("⚙️ Konfigurace & Správa pozic")
-api_key_input = st.sidebar.text_input("Zadej Gemini API klíč:", type="password", help="Získej zdarma na aistudio.google.com")
 
-if api_key_input:
-    st.session_state["gemini_api_key"] = api_key_input
+# Použití value pro udržení hodnoty klíče v UI
+user_key = st.sidebar.text_input("Zadej Gemini API klíč:", type="password", value=st.session_state["gemini_api_key"], help="Získej zdarma na aistudio.google.com")
+if user_key != st.session_state["gemini_api_key"]:
+    st.session_state["gemini_api_key"] = user_key
+    st.rerun()
+
+if st.session_state["gemini_api_key"]:
     st.sidebar.success("Gemini API klíč aktivován! 🚀")
 else:
-    if "gemini_api_key" not in st.session_state:
-        st.session_state["gemini_api_key"] = ""
+    st.sidebar.warning("API klíč není zadaný. Agent běží v záložním režimu.")
 
 st.sidebar.divider()
 st.sidebar.subheader("🔄 Úprava pozic ve mřížce")
-st.sidebar.markdown("Zvol pozici, kterou chceš přepsat jinou firmou:")
-
 with st.sidebar.form("replace_ticker_form"):
     target_pos = st.selectbox("Vyber pozici k přepsání:", st.session_state["watchlist"])
     new_replacement = st.text_input("Napsat nový Ticker (např. NFLX):").upper().strip()
@@ -158,7 +162,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Zeptej se na odhady zisků, asijské trhy, polovodiče..."):
+if prompt := st.chat_input("Zeptej se na výsledkovou sezónu, odhady zisků, asijské trhy..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -166,13 +170,14 @@ if prompt := st.chat_input("Zeptej se na odhady zisků, asijské trhy, polovodi�
     ai_response = None
     active_key = st.session_state.get("gemini_api_key", "")
 
+    # Správné volání nového Google GenAI SDK
     if GENAI_AVAILABLE and active_key:
         try:
             client = genai.Client(api_key=active_key)
             system_instruction = (
-                f"Jsi špičkový finanční a tržní agent zaměřený na US a Asijské trhy, polovodiče, čipy a paměti (TSMC, SK Hynix, NVDA atd.). "
-                f"Uživatel má ve svém fixním přehledu tyto firmy: {watchlist}. "
-                "Odpovídej analyticky, s hlubokou znalostí tržních cyklů, odhadů zisků a makroekonomických souvislostí v češtině."
+                f"Jsi špičkový finanční a tržní agent zaměřený na US a Asijské trhy, polovodiče, čipy a paměti. "
+                f"Uživatel má ve svém watchlistu tyto firmy: {watchlist}. "
+                "Odpovídej analyticky, s hlubokou znalostí termínů výsledkových sezón, makroekonomických souvislostí a odhadů v češtině."
             )
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
@@ -186,42 +191,27 @@ if prompt := st.chat_input("Zeptej se na odhady zisků, asijské trhy, polovodi�
         except Exception as e:
             ai_response = f"⚠️ Chyba při volání Gemini API: {str(e)}"
 
+    # Záložní logika, pokud klíč chybí nebo došlo k chybě
     if not ai_response:
         prompt_lower = prompt.lower()
-        if any(w in prompt_lower for w in ["odhad", "zisk", "polovodič", "paměť", "memory", "hynix", "samsung", "tsmc", "cyklus"]):
+        if any(w in prompt_lower for w in ["výsledk", "sezón", "termín", "říjen", "october", "datum"]):
+            ai_response = (
+                "📅 **Harmonogram výsledkové sezóny pro technologický sektor (říjen/listopad):**\n\n"
+                "1. **US Big Tech & Polovodiče:** Výsledková sezóna za 3. čtvrtletí tradičně začíná v polovině října (banky) a naplno se rozbíhá koncem října a v listopadu (Big Tech jako Alphabet, Meta, Microsoft, Apple, a výrobci čipů jako AMD či Nvidia).\n"
+                "2. **Asijský dodavatelský řetězec (TSMC, SK Hynix, Samsung):** TSMC obvykle publikuje své kvartální výsledky a výhled jako první již v polovině října (cca kolem 15.–20. dne v měsíci), což udává tón celému globálnímu sektoru polovodičů.\n\n"
+                "💡 *Jakmile vlevo v panelu ověříš svůj Gemini API klíč, model ti dokáže vygenerovat přesný harmonogram pro konkrétní tituly z tvého watchlistu.*"
+            )
+        elif any(w in prompt_lower for w in ["odhad", "zisk", "polovodič", "paměť", "memory", "hynix", "samsung", "tsmc", "cyklus"]):
             ai_response = (
                 "📊 **Analytický pohled: Odhady zisků v asijském polovodičovém sektoru & pamětech**\n\n"
-                "1. **Struktura poptávky:** Trh zažívá silnou disproporci. Běžná spotřební elektronika stagnuje, zatímco **AI infrastruktura a HBM (High Bandwidth Memory)** generují historicky nejvyšší marže.\n"
-                "2. **TSMC a pokročilý fab segment:** Odhady zisků pro nejbližší kvartály zůstávají revidované směrem nahoru díky plnému využití 3nm uzlů a pokročilého balípení (CoWoS).\n"
-                "3. **Paměťoví hráči (SK Hynix, Samsung, Micron):** Ceny DRAM a NAND pamětí se stabilizovaly na vyšších úrovních.\n\n"
-                "💡 *Tip: V levém bočním panelu můžeš zadat svůj **Gemini API klíč** pro plné zapojení živé AI logiky!*"
+                "1. **Struktura poptávky:** Trh zažívá silnou disproporci. Běžná spotřební elektronika stagnuje, zatímco **AI infrastruktura a HBM** generují historicky nejvyšší marže.\n"
+                "2. **TSMC:** Odhady zisků zůstávají revidované směrem nahoru díky plnému využití 3nm uzlů a pokročilého balípení (CoWoS).\n"
             )
-        elif any(w in prompt_lower for w in ["zpráv", "výtah", "shrnutí", "novink", "trh", "pre-market"]):
-            news_items = fetch_global_tech_news()
-            if news_items:
-                formatted_news = "\n".join([f"- **[{item['source']}]** [{item['title']}]({item['link']})" for item in news_items[:8]])
-                ai_response = f"📋 **Aktuální přehled zpráv:**\n\n{formatted_news}"
-            else:
-                ai_response = "⚠️ Zprávy se nepodařilo načíst."
         else:
-            found_tickers = [t for t in watchlist if t.lower() in prompt_lower]
-            if found_tickers:
-                parts = []
-                for t in found_tickers:
-                    try:
-                        info = yf.Ticker(t).info
-                        p = info.get("currentPrice") or info.get("regularMarketPrice", "N/A")
-                        c = info.get("currency", "USD")
-                        pe = info.get("trailingPE", "N/A")
-                        parts.append(f"**{t}**: Cena: {p} {c} | P/E: {pe}")
-                    except Exception:
-                        parts.append(f"**{t}**: Data nedostupná.")
-                ai_response = "📈 **Analýza vyžádaných titulů z watchlistu:**\n\n" + "\n".join(parts)
-            else:
-                ai_response = (
-                    f"Zaznamenal jsem tvůj dotaz: *'{prompt}'*.\n\n"
-                    "Pro plné zapojení AI logiky zadej svůj **Gemini API klíč** vlevo v postranním panelu."
-                )
+            ai_response = (
+                f"Zaznamenal jsem dotaz: *'{prompt}'*.\n\n"
+                "Zkontroluj prosím v levém bočním panelu, zda je Gemini API klíč správně zapsaný a aktivní."
+            )
 
     with st.chat_message("assistant"):
         st.markdown(ai_response)
